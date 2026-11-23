@@ -5,9 +5,9 @@ const SLUG_TO_MUSCLE = {
 };
 const NOT_MUSCLE = new Set(['head', 'hair', 'neck', 'hands', 'feet', 'ankles', 'knees']);
 
-// fills = { muscle: 0..1 } (intensité), sel = muscle sélectionné, w = largeur en px
-function bodySvg(view, fills, sel, w, label) {
-  const data = BODY_DATA[view], map = SLUG_TO_MUSCLE[view];
+// sex = "h" ou "f", fills = { muscle: 0..1 } (intensité), sel = muscle sélectionné, w = largeur en px
+function bodySvg(sex, view, fills, sel, w, label) {
+  const data = (BODY_DATA[sex] || BODY_DATA.h)[view], map = SLUG_TO_MUSCLE[view];
   let g = '';
   for (const p of data.parts) {
     const paths = p.d.map(d => `<path d="${d}"/>`).join('');

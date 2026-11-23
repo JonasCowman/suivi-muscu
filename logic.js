@@ -1,114 +1,111 @@
-// Programme et périodisation (source : Programme_muscu_nov2026-juin2027.md)
-const START = '2026-11-23';
-const TOTAL_WEEKS = 31;
-
-// big = gros mouvement (fourchette selon le méso), iso = isolation, bonus = séries retirées si 2 signaux de fatigue
-const SESSIONS = [
-  { id: 'lundi', dow: 1, name: 'Lundi — Pecs / Épaules', focus: 'Cage plate et deltoïdes', ex: [
-    { id: 'oiseau', n: 'Oiseau haltères banc incliné', s: 2, r: [20, 50], rest: 60, iso: true, note: 'Avant tout le reste' },
-    { id: 'pecfly', n: 'Pec fly machine', s: 2, r: [15, 20], rest: 90, iso: true, tempo: '2/0/2/1', note: 'Droit, cage bien sortie' },
-    { id: 'decline', n: 'Développé décliné convergent', s: 3, r: [8, 12], rest: 150, big: true, tempo: '2/0/1/0', note: 'Arrêt 2-3 cm avant la poitrine' },
-    { id: 'chestpress', n: 'Chest press convergent prise neutre', s: 3, r: [10, 15], rest: 120, tempo: '3/0/1/0', note: 'Amplitude réduite' },
-    { id: 'ecarte', n: 'Écarté décliné haltères', s: 2, r: [10, 15], rest: 90, iso: true, note: 'Un pied en avant, amplitude très contrôlée' },
-    { id: 'tirageneutre', n: 'Tirage vertical prise neutre serrée', s: 4, r: [8, 12], rest: 120, bonus: 1, note: 'Coudes le long du corps' },
-    { id: 'latpoulie', n: 'Élévation latérale unilatérale poulie basse', s: 3, r: [15, 20], rest: 60, iso: true, note: 'Buste légèrement en arrière' },
-    { id: 'triceps', n: 'Extension triceps corde poulie haute', s: 3, r: [10, 15], rest: 90, iso: true, bonus: 1, note: 'Coudes fixes' },
-  ] },
-  { id: 'mardi', dow: 2, name: 'Mardi — Jambes A', focus: 'Ischios puis quadriceps', ex: [
-    { id: 'oiseau', n: 'Oiseau haltères', s: 2, r: [20, 50], rest: 60, iso: true, note: 'Protocole quotidien' },
-    { id: 'legcurlallonge', n: 'Leg curl allongé', s: 3, r: [10, 15], rest: 90, iso: true, note: 'Les ischios avant les quadriceps' },
-    { id: 'legext', n: 'Leg extension (activation)', s: 2, r: [15, 20], rest: 60, iso: true, noFail: true, note: 'RIR 2-3, pas d\'échec' },
-    { id: 'hack', n: 'Hack squat', s: 3, r: [8, 12], rest: 180, big: true, note: 'Arrêt avant la parallèle, descente 2-3 s' },
-    { id: 'presse', n: 'Presse à 45°', s: 3, r: [10, 15], rest: 120, note: 'Amplitude contrôlée' },
-    { id: 'legcurlassis', n: 'Leg curl assis', s: 2, r: [12, 15], rest: 90, iso: true, bonus: 2 },
-    { id: 'mollets', n: 'Mollets debout', s: 3, r: [12, 20], rest: 60, iso: true, note: 'Pause 1 s étiré en bas' },
-    { id: 'crunch', n: 'Crunch à la poulie', s: 2, r: [12, 15], rest: 60, iso: true },
-  ] },
-  { id: 'jeudi', dow: 4, name: 'Jeudi — Dos / Biceps', focus: 'Dorsaux longs + rappel pecs', ex: [
-    { id: 'oiseau', n: 'Oiseau haltères banc incliné', s: 2, r: [20, 50], rest: 60, iso: true, note: 'Obligatoire avant le dos' },
-    { id: 'pullover', n: 'Pull-over à la poulie', s: 2, r: [15, 20], rest: 90, iso: true, note: 'Étirement maximal' },
-    { id: 'tractions', n: 'Tractions / tirage vertical prise large', s: 3, r: [8, 12], rest: 150, note: 'Omoplates basses et serrées' },
-    { id: 'tirage45', n: 'Tirage unilatéral 45-60°', s: 4, r: [10, 15], rest: 90, bonus: 1, note: 'Coudes bien ouverts' },
-    { id: 'pecfly', n: 'Pec fly machine (rappel)', s: 2, r: [15, 20], rest: 90, iso: true, tempo: '2/0/2/1' },
-    { id: 'declinehalteres', n: 'Développé décliné haltères prise neutre', s: 2, r: [8, 12], rest: 150, note: 'Arrêt 2-3 cm avant la poitrine' },
-    { id: 'lathalteres', n: 'Élévation latérale haltères', s: 4, r: [15, 20], rest: 60, iso: true },
-    { id: 'marteau', n: 'Curl marteau', s: 3, r: [10, 15], rest: 90, iso: true, bonus: 1 },
-  ] },
-  { id: 'vendredi', dow: 5, name: 'Vendredi — Jambes B', focus: 'Ischios, fessiers + épaules', ex: [
-    { id: 'oiseau', n: 'Oiseau haltères', s: 2, r: [20, 50], rest: 60, iso: true },
-    { id: 'sdjt', n: 'Soulevé de terre jambes tendues', s: 3, r: [8, 12], rest: 180, big: true, note: 'Dos neutre, barre collée aux jambes' },
-    { id: 'legcurldebout', n: 'Leg curl debout unilatéral', s: 3, r: [10, 15], rest: 90, iso: true },
-    { id: 'hipthrust', n: 'Hip thrust', s: 3, r: [8, 12], rest: 120, note: 'Pause 1 s en haut' },
-    { id: 'split', n: 'Split squat', s: 3, r: [8, 12], rest: 120, note: 'Par jambe, buste penché en avant' },
-    { id: 'latpoulie', n: 'Élévation latérale unilatérale poulie basse', s: 3, r: [15, 20], rest: 60, iso: true },
-    { id: 'curlpoulie', n: 'Curl biceps poulie', s: 2, r: [12, 15], rest: 90, iso: true, note: '1re série légère amplitude complète' },
-  ] },
-];
-
+// Logique du programme. Le programme actif (par défaut ou importé) est chargé avec setProgram().
 const MUSCLES = {
   pecs: 'Pectoraux', epaules_lat: 'Deltoïdes latéraux', epaules_post: 'Deltoïdes postérieurs', dos: 'Dos',
   biceps: 'Biceps', triceps: 'Triceps', avantbras: 'Avant-bras', abdos: 'Abdominaux',
   quadriceps: 'Quadriceps', ischios: 'Ischios', fessiers: 'Fessiers', mollets: 'Mollets',
 };
 
-// Muscles par exercice : 1 = muscle principal, 0,5 = muscle secondaire (une série compte pour moitié)
-const EX_MUSCLES = {
-  oiseau: { epaules_post: 1 }, pecfly: { pecs: 1 }, decline: { pecs: 1, triceps: 0.5 }, chestpress: { pecs: 1, triceps: 0.5 },
-  ecarte: { pecs: 1 }, tirageneutre: { dos: 1, biceps: 0.5 }, latpoulie: { epaules_lat: 1 }, lathalteres: { epaules_lat: 1 },
-  triceps: { triceps: 1 }, legcurlallonge: { ischios: 1 }, legcurlassis: { ischios: 1 }, legcurldebout: { ischios: 1 },
-  legext: { quadriceps: 1 }, hack: { quadriceps: 1, fessiers: 0.5 }, presse: { quadriceps: 1, fessiers: 0.5 },
-  mollets: { mollets: 1 }, crunch: { abdos: 1 }, pullover: { dos: 1 }, tractions: { dos: 1, biceps: 0.5 },
-  tirage45: { dos: 1, epaules_post: 0.5 }, declinehalteres: { pecs: 1, triceps: 0.5 }, marteau: { biceps: 1, avantbras: 0.5 },
-  sdjt: { ischios: 1, fessiers: 0.5 }, hipthrust: { fessiers: 1 }, split: { fessiers: 1, quadriceps: 0.5 }, curlpoulie: { biceps: 1 },
-};
+let P = null; // programme actif ; P.start = date de début effective (profil ou programme)
+
+function setProgram(prog, startOverride) { P = Object.assign({}, prog, { start: startOverride || prog.start }); return P; }
+
+// Vérifie un programme importé. Renvoie la liste des erreurs (vide si valide).
+function validateProgram(p) {
+  const err = [];
+  const isInt = (v, a, b) => Number.isInteger(v) && v >= a && v <= b;
+  const isRange = r => Array.isArray(r) && r.length === 2 && isInt(r[0], 1, 100) && isInt(r[1], r[0], 100);
+  if (!p || typeof p !== 'object') return ['Le fichier ne contient pas de programme.'];
+  if (p.format !== 'suivi-muscu-programme') err.push('Champ "format" : doit valoir "suivi-muscu-programme".');
+  if (typeof p.name !== 'string' || !p.name.trim()) err.push('Champ "name" : nom du programme manquant.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.start || '') || isNaN(Date.parse(p.start))) err.push('Champ "start" : date de début au format AAAA-MM-JJ.');
+  if (!isInt(p.weeks, 1, 104)) err.push('Champ "weeks" : nombre de semaines entre 1 et 104.');
+  const exIds = new Set();
+  if (!Array.isArray(p.sessions) || !p.sessions.length) err.push('Champ "sessions" : au moins une séance.');
+  else {
+    const sIds = new Set();
+    p.sessions.forEach((s, i) => {
+      const where = `Séance ${i + 1}${s && s.name ? ` (${s.name})` : ''}`;
+      if (!s || typeof s.id !== 'string' || !s.id) return err.push(`${where} : "id" manquant.`);
+      if (sIds.has(s.id)) err.push(`${where} : "id" en double (${s.id}).`);
+      sIds.add(s.id);
+      if (typeof s.name !== 'string' || !s.name) err.push(`${where} : "name" manquant.`);
+      if (s.dow !== undefined && !isInt(s.dow, 0, 6)) err.push(`${where} : "dow" = jour de 0 (dimanche) à 6 (samedi).`);
+      if (!Array.isArray(s.ex) || !s.ex.length) return err.push(`${where} : aucun exercice.`);
+      s.ex.forEach((e, j) => {
+        const w = `${where}, exercice ${j + 1}${e && e.n ? ` (${e.n})` : ''}`;
+        if (!e || typeof e.id !== 'string' || !e.id) return err.push(`${w} : "id" manquant.`);
+        exIds.add(e.id);
+        if (typeof e.n !== 'string' || !e.n) err.push(`${w} : nom "n" manquant.`);
+        if (!isInt(e.s, 1, 10)) err.push(`${w} : "s" = nombre de séries entre 1 et 10.`);
+        if (!isRange(e.r)) err.push(`${w} : "r" = fourchette de reps [min, max].`);
+        if (!isInt(e.rest, 10, 600)) err.push(`${w} : "rest" = repos en secondes (10 à 600).`);
+        if (e.bonus !== undefined && !isInt(e.bonus, 1, (e.s || 1))) err.push(`${w} : "bonus" doit être inférieur ou égal à "s".`);
+        if (!e.muscles || typeof e.muscles !== 'object' || !Object.keys(e.muscles).length) err.push(`${w} : "muscles" manquant.`);
+        else for (const [m, k] of Object.entries(e.muscles)) {
+          if (!MUSCLES[m]) err.push(`${w} : muscle inconnu "${m}" (possibles : ${Object.keys(MUSCLES).join(', ')}).`);
+          if (!(typeof k === 'number' && k > 0 && k <= 1)) err.push(`${w} : coefficient du muscle "${m}" entre 0 et 1.`);
+        }
+        (e.ranges || []).forEach(x => { if (!x || !isInt(x.from, 1, 104) || !isRange(x.r)) err.push(`${w} : "ranges" = [{ "from": semaine, "r": [min, max] }].`); });
+      });
+    });
+  }
+  if (!Array.isArray(p.mesos) || !p.mesos.length) err.push('Champ "mesos" : au moins un mésocycle.');
+  else if (isInt(p.weeks, 1, 104)) {
+    const sorted = [...p.mesos].sort((a, b) => a.from - b.from);
+    let next = 1;
+    for (const m of sorted) {
+      const w = `Mésocycle "${m.name || m.id || '?'}"`;
+      if (!isInt(m.from, 1, 104) || !isInt(m.to, m.from, 104)) { err.push(`${w} : "from" et "to" = semaines de début et de fin.`); continue; }
+      if (m.from !== next) err.push(`${w} : commence en semaine ${m.from}, attendu ${next} (pas de trou ni de chevauchement).`);
+      next = m.to + 1;
+      if (typeof m.name !== 'string' || !m.name) err.push(`${w} : "name" manquant.`);
+      if (!m.deload && (!isRange(m.bigR) || typeof m.rirBig !== 'string' || typeof m.rirIso !== 'string')) err.push(`${w} : "bigR", "rirBig" et "rirIso" obligatoires (sauf semaine allégée).`);
+    }
+    if (next !== p.weeks + 1) err.push(`Les mésocycles doivent couvrir les semaines 1 à ${p.weeks}.`);
+    if (sorted.length && sorted[0].deload) err.push('Le premier mésocycle ne peut pas être une semaine allégée.');
+  }
+  if (p.daily !== undefined && (!p.daily || typeof p.daily.n !== 'string' || !p.daily.n)) err.push('Champ "daily" : { "n": "nom", "detail": "précision" } ou supprime le champ.');
+  if (p.keyLifts !== undefined && !Array.isArray(p.keyLifts)) err.push('Champ "keyLifts" : liste d\'identifiants d\'exercices.');
+  for (const id of Array.isArray(p.keyLifts) ? p.keyLifts : []) if (!exIds.has(id)) err.push(`"keyLifts" : exercice "${id}" introuvable dans les séances.`);
+  return err;
+}
+
+function exMuscles(id) { for (const s of P.sessions) for (const e of s.ex) if (e.id === id) return e.muscles || {}; return {}; }
 
 // Séries prévues par muscle sur une semaine normale du programme
 function plannedWeekly() {
   const out = {};
-  for (const s of SESSIONS) for (const e of s.ex) for (const [m, k] of Object.entries(EX_MUSCLES[e.id] || {})) out[m] = (out[m] || 0) + e.s * k;
+  for (const s of P.sessions) for (const e of s.ex) for (const [m, k] of Object.entries(e.muscles || {})) out[m] = (out[m] || 0) + e.s * k;
   return out;
 }
-
-const KEY_LIFTS =['decline', 'chestpress', 'tractions', 'hack', 'legcurlallonge'];
-
-const MESOS = [
-  { id: 'M1', name: 'M1 Fondation', from: 1, to: 6, phase: 'Prise de muscle', kcal: '+150 à 250 kcal', bigR: [8, 12], rirBig: '2', rirIso: '1' },
-  { id: 'A1', name: 'Semaine allégée', from: 7, to: 7, deload: true, phase: 'Récupération', kcal: '+150 à 250 kcal' },
-  { id: 'M2', name: 'M2 Transition', from: 8, to: 12, phase: 'Prise de muscle', kcal: '+150 à 250 kcal', bigR: [8, 10], rirBig: '1-2', rirIso: '0-1' },
-  { id: 'A2', name: 'Semaine allégée', from: 13, to: 13, deload: true, phase: 'Début de sèche', kcal: '-300 kcal' },
-  { id: 'M3', name: 'M3 Sèche 1', from: 14, to: 18, phase: 'Sèche', kcal: '-300 à 400 kcal', bigR: [6, 10], rirBig: '2', rirIso: '1' },
-  { id: 'A3', name: 'Semaine allégée', from: 19, to: 19, deload: true, phase: 'Pause sèche', kcal: 'Maintien' },
-  { id: 'M4', name: 'M4 Sèche 2', from: 20, to: 24, phase: 'Sèche', kcal: '-300 à 400 kcal', bigR: [6, 10], rirBig: '2', rirIso: '1' },
-  { id: 'A4', name: 'Semaine allégée', from: 25, to: 25, deload: true, phase: 'Pause sèche', kcal: 'Maintien' },
-  { id: 'M5', name: 'M5 Finition', from: 26, to: 31, phase: 'Fin de sèche puis maintien', kcal: '-300 kcal puis maintien au 1er juin', bigR: [6, 10], rirBig: '1-2', rirIso: '0-1' },
-];
 
 function dayDiff(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }
 
 // shift = semaines de décalage (fêtes, semaine allégée anticipée)
 function weekOf(dateStr, shift = 0) {
-  const w = Math.floor(dayDiff(START, dateStr) / 7) + 1 - shift;
-  return Math.max(1, Math.min(TOTAL_WEEKS, w));
+  const w = Math.floor(dayDiff(P.start, dateStr) / 7) + 1 - shift;
+  return Math.max(1, Math.min(P.weeks, w));
 }
 
-function mesoOf(week) { return MESOS.find(m => week >= m.from && week <= m.to); }
+function mesoOf(week) { return P.mesos.find(m => week >= m.from && week <= m.to); }
 
-function nextDeload(week) { const m = MESOS.find(m => m.deload && m.from > week); return m ? m.from : null; }
+function nextDeload(week) { const m = P.mesos.filter(m => m.deload && m.from > week).sort((a, b) => a.from - b.from)[0]; return m ? m.from : null; }
+
+// Dernier mésocycle non allégé (pour les fourchettes d'une semaine allégée)
+function workMeso(week) { for (let w = week; w >= 1; w--) { const m = mesoOf(w); if (!m.deload) return m; } return mesoOf(week); }
 
 function rirFor(week, ex) {
   const m = mesoOf(week);
   if (m.deload) return '3-4';
   if (ex.noFail) return '2-3';
-  if (ex.big || !ex.iso) return week === 1 ? '3' : week === 30 ? '1' : m.rirBig;
+  if (ex.big || !ex.iso) return (P.rirWeeks || {})[week] || m.rirBig;
   return m.rirIso;
 }
 
 function rangeFor(week, ex) {
-  const m = mesoOf(week);
-  if (ex.big) return (m.bigR || mesoOf(week - 1).bigR);
-  if (ex.id === 'ecarte' && week >= 14) return [15, 20];
-  if (ex.id === 'pecfly' && week >= 26) return [20, 30];
-  return ex.r;
+  if (ex.big) return workMeso(week).bigR;
+  const o = (ex.ranges || []).filter(x => week >= x.from).sort((a, b) => b.from - a.from)[0];
+  return o ? o.r : ex.r;
 }
 
 // fatigue = nb de signaux de la semaine précédente
@@ -140,9 +137,15 @@ function progressionHint(lastSets, range) {
 
 function e1rm(kg, reps) { return kg * (1 + reps / 30); }
 
-function navyBodyFat(waist, neck, height) {
-  if (!(waist > neck) || !height) return null;
+// Méthode US Navy. Femme : la formule utilise aussi le tour de hanches.
+function navyBodyFat(sex, waist, neck, height, hips) {
+  if (!height || !(waist > 0) || !(neck > 0)) return null;
+  if (sex === 'f') {
+    if (!(waist + hips - neck > 0) || !hips) return null;
+    return 495 / (1.29579 - 0.35004 * Math.log10(waist + hips - neck) + 0.221 * Math.log10(height)) - 450;
+  }
+  if (!(waist > neck)) return null;
   return 495 / (1.0324 - 0.19077 * Math.log10(waist - neck) + 0.15456 * Math.log10(height)) - 450;
 }
 
-if (typeof module !== 'undefined') module.exports = { START, TOTAL_WEEKS, SESSIONS, KEY_LIFTS, MUSCLES, EX_MUSCLES, plannedWeekly, MESOS, weekOf, mesoOf, nextDeload, rirFor, rangeFor, setsFor, fatigueAdvice, countSignals, progressionHint, e1rm, navyBodyFat };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, setProgram, validateProgram, exMuscles, plannedWeekly, weekOf, mesoOf, nextDeload, rirFor, rangeFor, setsFor, fatigueAdvice, countSignals, progressionHint, e1rm, navyBodyFat, getProgram: () => P };
