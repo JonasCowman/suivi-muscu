@@ -287,6 +287,77 @@ assert.strictEqual(L.warmKg(9, 0.5, 2), 4);
 for (const kg of [null, undefined, 0, NaN, -5]) assert.strictEqual(L.warmKg(kg, 0.5, 2.5), null);
 assert.strictEqual(L.warmKg(2, 0.5, 2.5), null, 'arrondi à 0');
 
+// Mode protection. Exercice fictif « x » relié à la zone A, séance de 3 séries ; « y » sans lien
+L.setProgram({ ...clone(DEF), sessions: [
+  { id: 'a', name: 'A', ex: [{ id: 'x', n: 'X', s: 3, r: [8, 12], rest: 60, muscles: { dos: 1 }, joints: ['chevilles'] }, { id: 'y', n: 'Y', s: 3, r: [8, 12], rest: 60, muscles: { dos: 1 } }] },
+  { id: 'b', name: 'B', ex: [{ id: 'y', n: 'Y', s: 3, r: [8, 12], rest: 60, muscles: { dos: 1 } }] }] });
+const eX = { id: 'x', joints: ['chevilles'] }, eY = { id: 'y' };
+const zones = [{ id: 'zA', label: 'Zone A', tags: ['joint:chevilles'] }];
+const need = () => 3, wkKey = i => L.addDays('2026-11-30', 7 * i);
+// Une séance par semaine : [réponse, options]. sid 'a' = liée, 'b' = non liée
+const build = list => Object.fromEntries(list.map(([ans, o = {}], i) => { const sid = o.sid || 'a', sets = o.sets || R(60, 8, 8, 8); return [wkKey(i) + '|' + sid, { start: i + 1, done: o.done !== false, light: !!o.light, ex: sid === 'a' ? { x: sets, y: R(40, 8, 8, 8) } : { y: R(40, 8, 8, 8) }, ...(ans === null ? {} : { checkin: { zA: ans } }) }]; }));
+const G = (list, e = eX, z = zones) => L.guard(build(list), z, e, 'a', wkKey(list.length), 999, need).state;
+const N = null, off = { sid: 'b' }, li = { light: true }, arr = { sets: R(60, 8, 8, 8).map((s, i) => (i ? s : { ...s, stop: true })) };
+assert.strictEqual(G([]), 'ok');
+assert.strictEqual(G([[1]]), 'watch', 'orange isolé');
+assert.strictEqual(G([[1], [1]]), 'protect', '2 oranges de suite');
+assert.strictEqual(G([[2]]), 'protect', 'rouge');
+assert.strictEqual(G([[1], [0]]), 'ok');
+assert.strictEqual(G([[1], [N]]), 'ok', 'orange effacé par une séance liée sans réponse');
+assert.strictEqual(G([[1], [N], [1]]), 'watch');
+assert.strictEqual(G([[1], [N, off]]), 'watch', 'séance non liée : rien ne change');
+assert.strictEqual(G([[1], [N, off], [1]]), 'protect');
+assert.strictEqual(G([[1], [0, off]]), 'watch', 'vert sur séance non liée ignoré');
+assert.strictEqual(G([[1], [1, off]]), 'protect', 'orange sur séance non liée compté');
+assert.strictEqual(G([[1], [N, arr]]), 'ok', 'un arrêt n\'empêche pas l\'orange de s\'effacer');
+assert.strictEqual(G([[1], [N, { done: false }]]), 'watch', 'séance non terminée');
+assert.strictEqual(G([[2], [N], [N]]), 'protect', 'sans réponse, la protection reste');
+assert.strictEqual(G([[2], [1]]), 'protect');
+assert.strictEqual(G([[2], [0]]), 'ok', 'vert valable');
+assert.strictEqual(G([[2], [0, off]]), 'protect');
+assert.strictEqual(G([[2], [0, arr]]), 'protect', 'arrêt : vert non valable');
+assert.strictEqual(G([[2], [0, { sets: R(60, 8, 8) }]]), 'protect', 'séries manquantes : vert non valable');
+assert.strictEqual(G([[2], [0, { done: false }]]), 'protect');
+assert.strictEqual(G([[1], [1, li]]), 'watch', 'semaine allégée : orange ignoré');
+assert.strictEqual(G([[2], [0, li]]), 'protect', 'semaine allégée : vert ignoré');
+assert.strictEqual(G([[2, li]]), 'protect', 'semaine allégée : rouge compté');
+assert.strictEqual(G([[2]], eY), 'ok', 'exercice sans tag');
+assert.strictEqual(G([[2]], eX, []), 'ok', 'zone supprimée');
+assert.deepStrictEqual(L.guard({ ...build([[1]]), [wkKey(0) + '|b']: { start: 2, done: true, ex: { y: R(1, 8) }, checkin: { zB: 2 } } }, [...zones, { id: 'zB', label: 'Zone B', tags: ['joint:chevilles', 'joint:hanches'] }], eX, 'a', wkKey(1), 999, need).labels, ['Zone B'], 'la zone la plus grave');
+assert.strictEqual(L.guard(build([[0], [2]]), zones, eX, 'a', wkKey(1), 999, need).state, 'ok', 'séance en cours exclue');
+assert.strictEqual(L.guard({ [wkKey(0) + '|b']: { done: true, date: wkKey(0), ex: {}, checkin: { zA: 2 } } }, zones, eX, 'a', wkKey(0), Date.parse(wkKey(0)) + 1, need).state, 'protect', 'rouge du même jour, séance sans série');
+
+// Baisse de 10 % : palier 2,5 ou 1, au moins un palier, jamais 0
+assert.deepStrictEqual([[62.5, 2.5], [62.5, 5], [100, 5], [16, 2], [5, 1], [12.5, 2.5], [10, 2.5], [2.5, 2.5], [1, 1], [0, 1]].map(a => L.protectKg(...a)), [57.5, 57.5, 90, 14, 4, 10, 7.5, 2.5, 1, 0]);
+
+// Cycle complet : conseil du jour après chaque séance
+const advise = (list, o) => {
+  const logs = build(list), cur = wkKey(list.length), g = L.guard(logs, zones, eX, 'a', cur, 999, need);
+  const { past, efforts, guard } = L.applyGuard(L.pastTimes(logs, eX, 'a', cur, 999), list.map(() => null), g);
+  const h = L.progressionHint(past.length && past[past.length - 1].sets, { range: [8, 12], need: 3, inc: 2.5, light: false, past: past.map(t => t.sets), n: 3, efforts, guard, ...o });
+  return [h.kg, h.target && h.target.join('-'), h.text];
+};
+const c = [[0, { sets: R(62.5, 8, 8, 8) }], [1, { sets: R(62.5, 8, 8, 9) }]];
+assert.deepStrictEqual(advise(c), [62.5, '8-8-9', 'Objectif 8-8-9 à 62,5 kg, charge maintenue.']);
+c.push([1, { sets: R(62.5, 8, 8, 9) }]);
+assert.deepStrictEqual(advise(c), [57.5, '8-8-9', 'Objectif 8-8-9 à 57,5 kg, sans hausse.']);
+assert.deepStrictEqual(advise(c, { light: true }), [57.5, null, 'Semaine allégée : charge réduite (57,5 kg), sans forcer.']);
+c.push([N, { sets: R(57.5, 8, 8, 9) }]);
+assert.strictEqual(advise(c)[0], 57.5, 'une seule baisse, sur la charge d\'avant');
+c.push([0, { sets: R(57.5, 12, 12, 12) }]);
+assert.deepStrictEqual(advise(c), [62.5, '8-8-9', 'Sortie de protection : objectif 8-8-9 à 62,5 kg, sans hausse.']);
+c.push([0, { sets: R(62.5, 8, 8, 9) }]);
+assert.deepStrictEqual(advise(c), [62.5, '8-9-9', 'Objectif 8-9-9 à 62,5 kg.'], 'moteur normal');
+// Haut de fourchette : aucune hausse sous alerte
+for (const a of [1, 2]) assert.strictEqual(advise([[a, { sets: R(60, 12, 12, 12) }]])[1], '12-12-12');
+assert.strictEqual(advise([[2, { sets: R(60, 12, 12, 12) }]])[0], 55, '60 kg : 54, palier 2,5');
+assert.deepStrictEqual(advise([[2, { sets: R(0, 8, 8, 8) }]]), [0, '8-8-8', 'Objectif 8-8-8 au poids du corps, sans hausse.']);
+assert.deepStrictEqual(advise([[2, { sets: R(60, 8, 8) }]]), [55, null, 'Charge réduite (55 kg), mêmes reps.']);
+// Exercice fait pour la première fois sous protection : pas de charge d'avant, donc pas de baisse
+assert.strictEqual(advise([[2, off], [N, { sets: R(60, 8, 8, 8) }]])[0], 60);
+assert.strictEqual(advise([])[0], null);
+L.setProgram(DEF);
+
 // Petit programme valide
 const mini = { format: 'suivi-muscu-programme', version: 1, name: 'Test', start: '2027-01-04', weeks: 4, keyLifts: [], mesos: [{ id: 'A', name: 'Bloc', from: 1, to: 4, bigR: [8, 12], rirBig: '2', rirIso: '1' }], sessions: [{ id: 's1', name: 'Full body', ex: [{ id: 'squat', n: 'Squat', s: 3, r: [8, 12], rest: 120, big: true, muscles: { quadriceps: 1 } }] }] };
 assert.deepStrictEqual(L.validateProgram(mini), []);

@@ -41,9 +41,14 @@ function logFor(key, sid) {
   return db.logs[k] || (db.logs[k] = { ex: {} });
 }
 
+// Alerte des zones suivies sur un exercice, pour la séance en cours
+const guardOf = (e, sid) => guard(db.logs, db.profile.trackedZones || [], e, sid, wk(), Date.now(), plannedSets);
+
 function hintFor(e, sid) {
-  const key = wk(), past = pastTimes(db.logs, e, sid, key, Date.now()), last = past[past.length - 1];
-  return progressionHint(last && last.sets, { range: rangeFor(week(), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key), past: past.map(t => t.sets), efforts: past.map(t => effortOf(t.sets, rirFor(progWeek(t.key), e, prevFatigue(t.key)))), n: plannedSets(key, e) });
+  const key = wk(), all = pastTimes(db.logs, e, sid, key, Date.now());
+  const { past, efforts, guard: alert } = applyGuard(all, all.map(t => effortOf(t.sets, rirFor(progWeek(t.key), e, prevFatigue(t.key)))), guardOf(e, sid));
+  const last = past[past.length - 1];
+  return progressionHint(last && last.sets, { range: rangeFor(week(), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key), past: past.map(t => t.sets), efforts, guard: alert, n: plannedSets(key, e) });
 }
 
 function bestByWeek(exId) {
@@ -107,9 +112,11 @@ const mmss = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')
 
 // Check-in articulaire d'une séance terminée, pour les zones suivies du profil
 function viewJoints(log) {
-  const zones = db.profile.trackedZones || [], v = log.checkin || {};
+  const v = log.checkin || {}, stateOf = z => guard(db.logs, [z], { joints: z.tags.filter(t => t.startsWith('joint:')).map(t => t.slice(6)), patterns: z.tags.filter(t => t.startsWith('pattern:')).map(t => t.slice(8)) }, ui.sid, wk(), Date.now(), plannedSets).state;
+  // Les zones en protection d'abord, pour penser à les valider
+  const all = (db.profile.trackedZones || []).map(z => ({ ...z, hot: stateOf(z) === 'protect' })), zones = [...all.filter(z => z.hot), ...all.filter(z => !z.hot)];
   if (!log.done || !zones.length) return '';
-  return `<div class="card"><div class="disp">Check-in articulaire</div><div class="mut">Facultatif. Enregistré dès que tu touches.</div>${zones.map(z => `<div style="margin-top:12px">${esc(z.label)}</div><div class="lvls" role="group" aria-label="${esc(z.label)}">${['Rien', 'Gêne', 'Douleur'].map((l, n) => `<button class="lvl${n} ${v[z.id] === n ? 'on' : ''}" data-a="checkin" data-z="${z.id}" data-v="${n}" aria-pressed="${v[z.id] === n}">${v[z.id] === n ? '✓ ' : ''}${l}</button>`).join('')}</div>`).join('')}</div>`;
+  return `<div class="card"><div class="disp">Check-in articulaire</div><div class="mut">Facultatif. Enregistré dès que tu touches.</div>${zones.map(z => `<div class="${z.hot ? 'banner high' : ''}" style="margin:12px 0 0">${esc(z.label)}${z.hot ? ' : en protection, pense à la noter' : ''}</div><div class="lvls" role="group" aria-label="${esc(z.label)}">${['Rien', 'Gêne', 'Douleur'].map((l, n) => `<button class="lvl${n} ${v[z.id] === n ? 'on' : ''}" data-a="checkin" data-z="${z.id}" data-v="${n}" aria-pressed="${v[z.id] === n}">${v[z.id] === n ? '✓ ' : ''}${l}</button>`).join('')}</div>`).join('')}</div>`;
 }
 
 // Vue d'ensemble de la séance : un exercice par ligne, on touche pour ouvrir la page séance
@@ -143,6 +150,9 @@ function viewFocus() {
   h += `<div class="mut" id="elapsed">${log.start ? '' : 'Pas commencée'}</div><div class="bar" style="margin:6px 0 14px"><div style="width:${pct}%"></div></div>`;
   h += `<div class="card"><div class="disp">${esc(e.n)}</div>`;
   if (e.note) h += `<div class="warnchip">⚠ ${esc(e.note)}</div>`;
+  const al = guardOf(e, sid), names = esc(al.labels.join(', '));
+  if (al.state === 'protect') h += `<div class="banner high" style="margin:10px 0 0"><b>Mode Protection${hint.cut ? ' (-10 %)' : ''} : amplitude contrôlée / variante sécurisée</b><br>Zone : ${names}. Sortie : « Rien » au check-in d'une séance complète, sans arrêt.</div>`;
+  if (al.state === 'watch') h += `<div class="banner mid" style="margin:10px 0 0">Gêne signalée à la dernière séance : ${names}. Charge maintenue.</div>`;
   h += `<div><span class="tag c">${n} x ${r[0]}-${r[1]}</span><span class="tag c">RIR visé ${rir}</span>${e.tempo ? `<span class="tag">Tempo ${esc(e.tempo)}</span>` : ''}<span class="tag">Repos ${mmss(e.rest)}</span></div>`;
   h += `<div class="mut" style="margin-top:8px;color:var(--cyan)">${esc(hint.text)}</div>`;
   const warm = warmupFor(exs, idx), wDone = (log.warm || {})[e.id] || [], wKg = sets[0] && sets[0].kg != null ? sets[0].kg : hint.kg;

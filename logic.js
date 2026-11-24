@@ -190,7 +190,7 @@ function pastTimes(logs, e, sid, curKey, today) {
     if (log.light || !sets.length || key > curKey || k === curKey + '|' + sid) continue;
     const rank = P.sessions.findIndex(x => x.id === s);
     if (all ? key === curKey && !(log.start < now) : key === curKey) continue;
-    out.push({ key, same: s === sid, rank, start: log.start || 0, sets });
+    out.push({ k, key, same: s === sid, rank, start: log.start || 0, sets });
   }
   out.sort((a, b) => a.key.localeCompare(b.key) || (a.start && b.start ? a.start - b.start : a.rank - b.rank));
   const list = !all && out.some(t => t.same) ? out.filter(t => t.same) : out;
@@ -212,15 +212,77 @@ function effortOf(sets, target) {
   return sum >= 0 ? 'up' : 'soft';
 }
 
+// ---------- Mode protection (règles de l'utilisateur) ----------
+// État d'une zone, déduit des séances : 'ok', 'watch' (orange isolé) ou 'protect'. a = réponse, linked = exercice lié fait, clean = vert valable
+function zoneStep(st, { a, light, linked, clean }) {
+  if (a === 2) return 'protect'; // le rouge compte même en semaine allégée
+  if (light) return st;
+  if (a === 1) return st === 'ok' ? 'watch' : 'protect';
+  if (st === 'protect') return a === 0 && clean ? 'ok' : st;
+  return st === 'watch' && linked ? 'ok' : st;
+}
+
+// Alerte sur l'exercice e, pour la séance en cours. before[k] = alerte au début de chaque séance passée. need(clé, exercice) = séries prévues
+function guard(logs, zones, e, sid, curKey, today, need) {
+  const tags = exTags(e), mine = zones.filter(z => z.tags.some(t => tags.includes(t)));
+  const when = log => log.start || Date.parse(log.date) || 0, now = (logs[curKey + '|' + sid] || {}).start || today;
+  const list = Object.entries(logs).map(([k, log]) => ({ k, log, key: k.split('|')[0], s: k.split('|')[1], t: when(log) }))
+    .filter(x => (x.key === curKey ? x.s !== sid && x.t && x.t < now : x.key < curKey)).sort((a, b) => a.key.localeCompare(b.key) || a.t - b.t);
+  const level = { ok: 0, watch: 1, protect: 2 }, worst = (a, b) => (level[b] > level[a] ? b : a);
+  const before = Object.fromEntries(list.map(x => [x.k, 'ok']));
+  let state = 'ok';
+  const ends = mine.map(z => {
+    let st = 'ok';
+    for (const { k, key, s, log } of list) {
+      before[k] = worst(before[k], st);
+      const ses = P.sessions.find(x => x.id === s), hit = x => exTags(x).some(t => z.tags.includes(t));
+      const ex = (ses ? ses.ex : P.sessions.flatMap(x => x.ex)).filter(hit), sets = x => doneSets(log.ex[x.id]);
+      const linked = !!log.done && ex.some(x => sets(x).length);
+      const clean = linked && ex.every(x => (ses ? sets(x).length >= need(key, x) : true) && !sets(x).some(y => y.stop));
+      st = zoneStep(st, { a: (log.checkin || {})[z.id], light: log.light, linked, clean });
+    }
+    state = worst(state, st);
+    return st;
+  });
+  return { state, labels: state === 'ok' ? [] : mine.filter((z, i) => ends[i] === state).map(z => z.label), before, order: list.map(x => x.k) };
+}
+
+// Retire les séances faites en protection et bloque la progression sous alerte, puis une séance à la sortie.
+// past = pastTimes(), efforts = effortOf() de chacune
+function applyGuard(past, efforts, g) {
+  const keep = past.map((t, i) => ({ t, effort: efforts[i] })).filter(x => g.before[x.t.k] !== 'protect');
+  // Aucune séance d'avant protection : on garde l'historique tel quel, sans baisse
+  const list = keep.length ? keep : past.map((t, i) => ({ t, effort: efforts[i] }));
+  const wasProtected = (from, to) => g.order.slice(g.order.indexOf(from) + 1, to ? g.order.indexOf(to) + 1 : undefined).some(k => g.before[k] === 'protect');
+  const last = list[list.length - 1], exit = !!last && g.state !== 'protect' && keep.length > 0 && wasProtected(last.t.k);
+  // Une séance freinée reprend l'objectif de la précédente : celle-ci ne doit donc pas avoir fait avancer l'objectif
+  const out = list.map((x, i) => {
+    const next = list[i + 1];
+    const held = next ? g.before[next.t.k] !== 'ok' || wasProtected(x.t.k, next.t.k) : g.state !== 'ok' || exit;
+    return held ? 'hold' : x.effort;
+  });
+  return { past: list.map(x => x.t), efforts: out, guard: { state: g.state, exit, cut: keep.length > 0 } };
+}
+
+// Charge en protection : -10 % au palier le plus proche (2,5 kg ou 1 kg), au moins un palier de moins, jamais 0
+function protectKg(kg, inc) {
+  const p = inc >= 2.5 ? 2.5 : 1;
+  let v = Math.round(+(kg * 0.9 / p).toFixed(6)) * p;
+  if (v >= kg) v = kg - p;
+  return v > 0 ? v : kg;
+}
+
 // Conseil du jour. sets = dernière séance (hors semaine allégée), need = séries prévues ce jour-là, n = séries prévues aujourd'hui,
-// past = séances comparables jusqu'à sets compris, efforts = effortOf() de chacune, light = semaine allégée en cours. target = objectif par série, ou null
-function progressionHint(sets, { range, need, inc, light, past, n, efforts = [] }) {
+// past = séances comparables jusqu'à sets compris, efforts = effortOf() de chacune, light = semaine allégée en cours,
+// guard = alerte de applyGuard(). target = objectif par série, ou null
+function progressionHint(sets, { range, need, inc, light, past, n, efforts = [], guard = { state: 'ok' } }) {
   const done = (sets || []).filter(s => s && s.kg >= 0 && s.reps > 0);
   if (!done.length) return { kg: null, target: null, text: 'Première fois : bas de fourchette, note ta charge.' };
   const fr = n => String(Math.round(n * 100) / 100).replace('.', ',');
-  const kg = Math.max(...done.map(s => s.kg)), load = kg ? `${fr(kg)} kg` : 'poids du corps';
-  if (light) return { kg, target: null, text: `Semaine allégée : même charge (${load}), sans forcer.` };
-  if (done.some(s => s.stop)) return { kg, target: null, text: `Même charge (${load}), mêmes reps.` };
+  const kg = Math.max(...done.map(s => s.kg)), use = guard.state === 'protect' && guard.cut ? protectKg(kg, inc) : kg;
+  const load = kg ? `${fr(use)} kg` : 'poids du corps', verb = use < kg ? 'Charge réduite' : 'Même charge';
+  if (light) return { kg: use, cut: use < kg, target: null, text: `Semaine allégée : ${verb.toLowerCase()} (${load}), sans forcer.` };
+  if (done.some(s => s.stop)) return { kg: use, cut: use < kg, target: null, text: `${verb} (${load}), mêmes reps.` };
   const effort = efforts[efforts.length - 1], hard = effort === 'hold' || effort === 'soft';
   const top = done.length >= need && done.every(s => s.kg === kg && s.reps >= range[1]);
   if (top && !hard) {
@@ -230,9 +292,11 @@ function progressionHint(sets, { range, need, inc, light, past, n, efforts = [] 
   if (past && done.length >= need && done.length === n && done.every(s => s.kg === kg)) {
     const target = top ? Array(n).fill(range[1]) : repTarget(past.map(p => p.filter(s => s && s.kg >= 0 && s.reps > 0)), range[1], efforts);
     const goal = `bjectif ${target.join('-')} ${kg ? 'à ' + load : 'au poids du corps'}`;
+    if (guard.state !== 'ok' || guard.exit) return { kg: use, cut: use < kg, target, text: `${guard.exit && guard.state === 'ok' ? 'Sortie de protection : o' : 'O'}${goal}, ${guard.state === 'watch' ? 'charge maintenue' : 'sans hausse'}.` };
     if (effort === 'hold') return { kg, target, text: `Consolidation : o${goal}, effort au-dessus de la cible.` };
     return { kg, target, text: top ? `O${goal} : charge maintenue, effort un peu au-dessus de la cible.` : `O${goal}.` };
   }
+  if (guard.state !== 'ok' || guard.exit) return { kg: use, cut: use < kg, target: null, text: `${verb} (${load}), mêmes reps.` };
   if (top || effort === 'hold') return { kg, target: null, text: `Même charge (${load}), mêmes reps : effort au-dessus de la cible.` };
   return { kg, target: null, text: `Même charge (${load}), +1 rep sur une série.` };
 }
@@ -354,4 +418,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
