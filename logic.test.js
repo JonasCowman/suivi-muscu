@@ -426,4 +426,58 @@ L.setProgram(DEF);
 assert.strictEqual(L.zoneMuscle(TRAP, L.plannedWeekly()), 'dos', 'programme sans trapèzes : zone colorée avec le dos, comme avant');
 assert.strictEqual(L.zoneMuscle(ADD, L.plannedWeekly()), null, 'programme sans adducteurs : zone neutre');
 assert.strictEqual(L.zoneMuscle(['pecs'], {}), 'pecs');
+// Catalogue : identifiants, muscles, tags et remplaçants valides ; les exercices du programme de 31 semaines gardent leur identifiant
+const LIB = require('./catalogue.js'), cat = Object.fromEntries(LIB.CATALOGUE.map(e => [e.id, e]));
+assert.strictEqual(Object.keys(cat).length, LIB.CATALOGUE.length, 'identifiant en double');
+for (const id of DEF.sessions.flatMap(s => s.ex.map(e => e.id))) assert.ok(cat[id], id + ' absent du catalogue');
+for (const e of LIB.CATALOGUE) {
+  assert.strictEqual(Object.values(e.muscles).filter(k => k === 1).length, 1, e.id + ' : un seul muscle principal');
+  assert.ok(e.swapIds.every(x => cat[x] && x !== e.id), e.id + ' : remplaçant inconnu');
+  assert.ok(e.equipment.length && e.equipment.flat().every(q => Object.hasOwn(LIB.EQUIPMENT, q)), e.id + ' : matériel inconnu');
+}
+
+// Générateur Upper/Lower
+const FULL = Object.keys(LIB.EQUIPMENT), gen = (equipment, refused) => L.generateProgram({ equipment, refused, start: '2027-01-04' }, LIB);
+const list = g => Object.fromEntries(g.program.sessions.map(s => [s.id, s.ex.map(e => e.id + e.s).join(' ')]));
+const neutral = gen(FULL);
+assert.deepStrictEqual(list(neutral), Object.fromEntries(LIB.UPPER_LOWER.sessions.map(s => [s.id, s.ex.map(x => x.join('')).join(' ')])), 'salle complète : séances validées');
+assert.deepStrictEqual(neutral.low, []);
+// Tableau validé : haltères et banc ; puis avec barre, rack et barre de traction
+assert.deepStrictEqual(list(gen(['halteres', 'banc'])), { 'upper-a': 'dchalteres3 rowinghaltere3 ecarte2 pulloverhaltere2 lathalteres2 oiseau2 curlincline3', 'lower-a': 'fentes4 sdjthalteres3 glutebridge2 mollets2 crunchsol2', 'upper-b': 'declinehalteres3 rowinghaltere3 pulloverhaltere2 lathalteres2 oiseau2 barrefront3', 'lower-b': 'sdjthalteres3 fentesbulgares3 mollets2 crunchsol2' });
+assert.deepStrictEqual(gen(['halteres', 'banc']).low, [{ m: 'quadriceps', v: 5.5, base: 6 }], 'muscle sous sa base : signalé');
+const barre = list(gen(['halteres', 'banc', 'barre', 'traction']));
+assert.strictEqual(barre['lower-a'], 'squat3 sdjthalteres3 hipthrust2 mollets2 crunchsol2');
+assert.strictEqual(barre['lower-b'], 'sdjt3 frontsquat3 mollets2 crunchsol2', 'pas le même exercice que la séance jumelle');
+assert.strictEqual(barre['upper-b'].split(' ')[2], 'tractions2', 'doublon accepté en dernier recours');
+assert.ok(!JSON.stringify(gen(FULL, ['hack', 'squat']).program).includes('"hack"'), 'exercice refusé : jamais proposé');
+assert.deepStrictEqual(gen(FULL, ['hack']).program.keyLifts, ['dchalteres', 'tractions', 'squat', 'sdjt'], 'objectif de charge : exercice qui remplace');
+assert.strictEqual(gen(FULL, LIB.CATALOGUE.map(e => e.id)).program, null, 'tout refusé : pas de programme');
+// Toutes les combinaisons de matériel, et chaque refus seul
+for (let k = 0; k < 128 + LIB.CATALOGUE.length; k++) {
+  const eq = k < 128 ? FULL.filter((_, i) => k >> i & 1) : FULL, ref = k < 128 ? [] : [LIB.CATALOGUE[k - 128].id], g = gen(eq, ref).program;
+  assert.deepStrictEqual(L.validateProgram(g), [], 'programme généré valide : ' + eq + ref);
+  for (const s of g.sessions) {
+    assert.strictEqual(new Set(s.ex.map(e => e.id)).size, s.ex.length, 'doublon dans une séance');
+    assert.ok(s.ex.reduce((t, e) => t + e.s, 0) <= 22 && s.ex.every(e => e.s <= 4));
+    for (const e of s.ex) assert.ok(cat[e.id].equipment.some(a => a.every(q => eq.includes(q))) && !ref.includes(e.id) && e.id !== 'nordic', e.id + ' impossible');
+  }
+}
+// Blocs donnés par l'utilisateur : reps et RIR de chaque semaine
+L.setProgram(neutral.program);
+const gx = id => neutral.program.sessions.flatMap(s => s.ex).find(e => e.id === id);
+for (let w = 1; w <= 24; w++) {
+  const b = LIB.BLOCKS[Math.ceil(w / 6) - 1], lightWeek = w % 6 === 0;
+  assert.strictEqual(L.isLight(w), lightWeek);
+  for (const id of ['dchalteres', 'rowingmachine']) { assert.deepStrictEqual(L.rangeFor(w, gx(id)), b.poly); assert.strictEqual(L.rirFor(w, gx(id)), lightWeek ? '3' : b.rirPoly); }
+  assert.deepStrictEqual(L.rangeFor(w, gx('pecfly')), b.iso); assert.strictEqual(L.rirFor(w, gx('pecfly')), lightWeek ? '3' : b.rirIso);
+  assert.deepStrictEqual([L.rangeFor(w, gx('latpoulie')), L.rangeFor(w, gx('oiseau')), L.rangeFor(w, gx('mollets'))], [[15, 20], [20, 30], [12, 20]]);
+}
+assert.strictEqual(L.rirFor(1, gx('pecfly'), 3), '3', 'semaine allégée anticipée : même RIR');
+assert.strictEqual(neutral.program.sessions.flatMap(s => s.ex).reduce((t, e) => t + L.setsFor(6, e), 0), 31);
+assert.ok(L.fatigueAdvice(3).text.includes('RIR 3.'));
+assert.deepStrictEqual(neutral.program.sessions[0].ex.map((e, i) => L.warmupFor(neutral.program.sessions[0].ex, i).length), [3, 2, 0, 2, 1, 0, 0], 'séries W selon la catégorie');
+L.setProgram(DEF);
+assert.strictEqual(L.rirFor(7, ex('decline')), '3-4', 'programme sans rirLight : inchangé');
+assert.ok(L.fatigueAdvice(3).text.includes('RIR 3-4.'));
+assert.ok(L.validateProgram({ ...clone(mini), rirLight: 3 }).some(e => e.includes('rirLight')));
 console.log('logic ok');

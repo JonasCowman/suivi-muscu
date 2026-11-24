@@ -88,6 +88,7 @@ function validateProgram(p) {
     if (isInt(p.weeks, 1, 104) && next !== p.weeks + 1) err.push(`Les mésocycles doivent couvrir les semaines 1 à ${p.weeks}.`);
     if (sorted[0].deload) err.push('Le premier mésocycle ne peut pas être une semaine allégée.');
   }
+  if (p.rirLight !== undefined && !isText(p.rirLight)) err.push('Champ "rirLight" : RIR des semaines allégées, entre guillemets.');
   if (p.rirWeeks !== undefined && !(isObj(p.rirWeeks) && Object.values(p.rirWeeks).every(isText))) err.push('Champ "rirWeeks" : { "semaine": "RIR" }, RIR entre guillemets.');
   if (p.daily !== undefined && !(isObj(p.daily) && isText(p.daily.n) && (p.daily.detail === undefined || typeof p.daily.detail === 'string'))) err.push('Champ "daily" : { "n": "nom", "detail": "précision" } ou supprime le champ.');
   if (p.keyLifts !== undefined && !Array.isArray(p.keyLifts)) err.push('Champ "keyLifts" : liste d\'identifiants d\'exercices.');
@@ -152,7 +153,7 @@ function isLight(week, fatigue = 0) { return !!mesoOf(week).deload || fatigue >=
 
 function rirFor(week, ex, fatigue = 0) {
   const m = mesoOf(week);
-  if (isLight(week, fatigue)) return '3-4';
+  if (isLight(week, fatigue)) return P.rirLight || '3-4';
   if (ex.noFail) return '2-3';
   const rir = ex.big || !ex.iso ? (P.rirWeeks || {})[week] || m.rirBig : m.rirIso;
   return fatigue === 2 && !(parseFloat(rir) >= 2) ? '2' : rir;
@@ -171,7 +172,7 @@ function setsFor(week, ex, fatigue = 0) {
 }
 
 function fatigueAdvice(count) {
-  if (count >= 3) return { level: 'high', text: 'Semaine allégée anticipée : moitié des séries, mêmes charges, RIR 3-4. Décale le calendrier d\'une semaine.' };
+  if (count >= 3) return { level: 'high', text: `Semaine allégée anticipée : moitié des séries, mêmes charges, RIR ${P.rirLight || '3-4'}. Décale le calendrier d'une semaine.` };
   if (count === 2) return { level: 'mid', text: 'Retire les séries bonus et passe toutes tes séries à RIR 2.' };
   return { level: 'ok', text: 'Rien à changer, tu continues.' };
 }
@@ -321,6 +322,73 @@ function progressionHint(sets, { range, need, inc, light, past, n, efforts = [],
   return { kg, target: null, text: `Même charge (${load}), +1 rep sur une série.` };
 }
 
+// ---------- Générateur de programme ----------
+// lib = LIBRARY de catalogue.js. Règles validées par l'utilisateur (séances Upper/Lower, remplacements, ajout de séries).
+const mainMuscle = e => Object.keys(e.muscles).find(m => e.muscles[m] === 1);
+const isPoly = e => e.category === 'lourd' || e.category === 'second';
+
+// Remplaçant de l'exercice id : used = déjà pris dans la séance, twin = exercices de la séance jumelle. null : aucun
+function pickEx(id, byId, allowed, used, twin) {
+  if (allowed(id) && !used.has(id)) return id;
+  const e = byId[id], m = mainMuscle(e);
+  const cand = [...new Set([...e.swapIds, ...Object.keys(byId)])].filter(x => x !== id && !used.has(x) && allowed(x));
+  const same = cand.filter(x => mainMuscle(byId[x]) === m), kind = same.filter(x => isPoly(byId[x]) === isPoly(e));
+  const fresh = kind.find(x => !twin.has(x));
+  if (fresh) return fresh;
+  // Il ne reste qu'un doublon : un exercice relié du même type qui travaille le muscle, sinon le doublon
+  if (kind.length) return cand.find(x => !twin.has(x) && isPoly(byId[x]) === isPoly(e) && byId[x].muscles[m] >= 0.5 && (e.swapIds.includes(x) || byId[x].swapIds.includes(id))) || kind[0];
+  return same.find(x => !twin.has(x)) || same[0] || null;
+}
+
+function volumeOf(sessions, byId) {
+  const v = {};
+  for (const s of sessions) for (const x of s.ex) if (x.id) for (const [m, k] of Object.entries(byId[x.id].muscles)) v[m] = (v[m] || 0) + x.s * k;
+  return v;
+}
+
+// Exercice du catalogue au format d'un programme. Fourchettes par bloc de 6 semaines, sauf fourchette fixe (reps)
+function toProgramEx(e, s, blocks) {
+  const key = isPoly(e) ? 'poly' : 'iso', out = { id: e.id, n: e.n, s, r: e.reps || blocks[0][key], rest: e.rest, inc: e.inc, muscles: e.muscles, joints: e.joints, patterns: e.patterns, note: e.cue };
+  if (e.category === 'lourd') out.big = true;
+  if (!isPoly(e)) out.iso = true;
+  if (e.category === 'postural') out.cat = 'postural';
+  if (e.noFail) out.noFail = true;
+  if (e.tempo) out.tempo = e.tempo;
+  if (!e.reps && !out.big) out.ranges = blocks.slice(1).map((b, i) => ({ from: 6 * (i + 1) + 1, r: b[key] }));
+  return JSON.parse(JSON.stringify(out));
+}
+
+// Renvoie { program, low } : low = muscles sous leur base [{ m, v, base }]. program null si aucune séance n'est possible
+function generateProgram({ equipment, refused = [], start }, lib) {
+  const byId = Object.fromEntries(lib.CATALOGUE.map(e => [e.id, e]));
+  const allowed = id => byId[id].equipment.some(a => a.every(q => equipment.includes(q))) && !refused.includes(id) && !(byId[id].fromWeek > 1);
+  const built = [];
+  for (const s of lib.UPPER_LOWER.sessions) {
+    const prev = built.find(b => b.pair === s.pair), other = lib.UPPER_LOWER.sessions.find(o => o.pair === s.pair && o.id !== s.id);
+    const twin = new Set(prev ? prev.ex.map(x => x.id) : other.ex.map(([id]) => id).filter(allowed)), used = new Set();
+    const ex = s.ex.map(([id, n], i) => {
+      const later = s.ex.slice(i + 1).map(([x]) => x).filter(allowed), got = pickEx(id, byId, allowed, new Set([...used, ...later]), twin);
+      used.add(got);
+      return { id: got, from: id, s: n };
+    });
+    built.push({ ...s, ex });
+  }
+  // Muscle sous sa base : +1 série sur un exercice qui le vise en premier (4 par exercice, 22 par séance)
+  for (const [m, base] of Object.entries(lib.VOLUME_BASE)) while ((volumeOf(built, byId)[m] || 0) < base) {
+    const list = built.filter(s => s.ex.reduce((t, x) => t + x.s, 0) < 22).flatMap(s => s.ex).filter(x => x.id && mainMuscle(byId[x.id]) === m && x.s < 4);
+    if (!list.length) break;
+    list.reduce((a, x) => x.s < a.s ? x : a).s++;
+  }
+  const vol = volumeOf(built, byId), low = Object.entries(lib.VOLUME_BASE).map(([m, base]) => ({ m, v: vol[m] || 0, base })).filter(x => x.v < x.base);
+  const sessions = built.map(({ id, dow, name, focus, ex }) => ({ id, dow, name, focus, ex: ex.filter(x => x.id).map(x => toProgramEx(byId[x.id], x.s, lib.BLOCKS)) })).filter(s => s.ex.length);
+  if (!sessions.length) return { program: null, low };
+  const keyLifts = [...new Set(lib.UPPER_LOWER.keyLifts.map(k => built.flatMap(s => s.ex).find(x => x.from === k).id).filter(Boolean))];
+  const mesos = lib.BLOCKS.flatMap((b, i) => [
+    { id: 'B' + (i + 1), name: `Bloc ${i + 1} ${b.name}`, from: 6 * i + 1, to: 6 * i + 5, phase: 'Prise de muscle', bigR: [...b.poly], rirBig: b.rirPoly, rirIso: b.rirIso },
+    { id: 'A' + (i + 1), name: 'Semaine allégée', from: 6 * i + 6, to: 6 * i + 6, deload: true, phase: 'Récupération' }]);
+  return { program: { format: 'suivi-muscu-programme', version: 1, generated: true, name: lib.UPPER_LOWER.name, start, weeks: 6 * lib.BLOCKS.length, rirLight: '3', keyLifts, mesos, sessions }, low };
+}
+
 // Repos après une série W, selon le pourcentage de la charge de travail (barème fourni par l'utilisateur)
 function warmRest(pct, heavy) { return pct <= 0.55 ? 45 : pct <= 0.75 ? 60 : heavy ? 120 : 90; }
 
@@ -448,4 +516,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, generateProgram, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
