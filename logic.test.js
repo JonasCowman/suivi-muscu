@@ -111,7 +111,9 @@ assert.deepStrictEqual(pt(undefined, 'vendredi', 9), [21], 'semaine allégée et
 assert.deepStrictEqual(pt(undefined, 'lundi', 9), [20], 'séance en cours exclue');
 assert.deepStrictEqual(pt(undefined, 'jeudi', 9), [20, 21], 'jamais faite ce jour-là : les autres séances');
 assert.deepStrictEqual(pt('postural', 'mardi', 9), [20, 21, 22]);
-assert.deepStrictEqual(pt('postural', 'lundi', 9), [20, 21], 'une séance commencée après ne compte pas');
+const later = { ...plogs, '2026-11-23|jeudi': at(7, 24) };
+assert.deepStrictEqual(pt('postural', 'lundi', 9, later), [20, 21], 'séance de la même semaine, validée mais commencée après : ignorée');
+assert.deepStrictEqual(pt('postural', 'vendredi', 9, later), [20, 21, 22, 24]);
 
 assert.ok(Math.abs(L.navyBodyFat('h', 80, 38.5, 183) - 11.2) < 0.3);
 assert.strictEqual(L.navyBodyFat('h', 30, 38, 183), null);
