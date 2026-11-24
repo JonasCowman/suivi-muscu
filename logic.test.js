@@ -135,6 +135,7 @@ assert.deepStrictEqual(X([R(60, 8, 8, 8)], ['up']).target, [8, 8, 9]);
 assert.deepStrictEqual(X([R(60, 8, 8, 8)], ['soft']).target, [8, 8, 9]);
 assert.deepStrictEqual(X([R(60, 8, 8, 8)], ['hold']).target, [8, 8, 8], 'première séance : total fait, sans +1');
 assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 9)], ['up', 'hold']).target, [8, 8, 9], 'même objectif que la séance');
+assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 10, 9, 9)], ['up', 'hold']).target, [8, 8, 9], 'dépassé en forçant : objectif prévu');
 assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 8)], ['hold', 'hold']).target, [8, 8, 8], 'objectif de la 2e séance : 24, pas 25');
 assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 7)], ['hold', 'up']).target, [8, 8, 8], 'objectif maintenu puis raté : inchangé');
 assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 8)], ['hold', 'up']).target, [8, 8, 9], 'objectif maintenu puis atteint');

@@ -27,7 +27,7 @@ Un programme est un fichier JSON. Le plus simple : dans l'appli, onglet **Profil
 | `weeks` | oui | Nombre de semaines (1 à 104) |
 | `daily` | non | Tâche quotidienne cochable sur le Dashboard (supprime le champ si inutile) |
 | `keyLifts` | non | Identifiants des exercices suivis dans « Objectifs de charge » |
-| `rirWeeks` | non | RIR imposé aux polyarticulaires certaines semaines (ex. `"1": "3"` en semaine 1) |
+| `rirWeeks` | non | RIR imposé aux polyarticulaires certaines semaines (ex. `"1": "3"` en semaine 1, même écriture que `rirBig`) |
 
 ## Mésocycles (`mesos`)
 
@@ -44,7 +44,7 @@ Ils doivent couvrir toutes les semaines, de 1 à `weeks`, sans trou ni chevauche
 | `from`, `to` | Première et dernière semaine |
 | `deload` | `true` = semaine allégée : moitié des séries, RIR 3-4 |
 | `bigR` | Fourchette de reps des gros mouvements (exercices `"big": true`) |
-| `rirBig` / `rirIso` | RIR des polyarticulaires / de l'isolation (texte : `"2"`, `"1-2"`…) |
+| `rirBig` / `rirIso` | RIR des polyarticulaires / de l'isolation (texte : `"2"` ou `"1-2"`). Comparé au RIR noté pour décider de la progression : tout autre texte s'affiche, mais le RIR est alors ignoré |
 | `phase`, `kcal` | Textes affichés sur le Dashboard (facultatifs) |
 
 ## Séances (`sessions`)
