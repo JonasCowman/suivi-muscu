@@ -356,6 +356,20 @@ assert.deepStrictEqual(advise([[2, { sets: R(60, 8, 8) }]]), [55, null, 'Charge 
 // Exercice fait pour la première fois sous protection : pas de charge d'avant, donc pas de baisse
 assert.strictEqual(advise([[2, off], [N, { sets: R(60, 8, 8, 8) }]])[0], 60);
 assert.strictEqual(advise([])[0], null);
+// Exercice postural (comparé à la séance juste avant), même semaine : rouge en 1re séance, baisse dès la 2e, une seule baisse, sortie
+L.setProgram({ ...clone(DEF), sessions: ['l', 'm', 'j', 'v'].map(id => ({ id, name: id, ex: [{ id: 'x', n: 'X', s: 3, r: [8, 12], rest: 60, muscles: { dos: 1 }, cat: 'postural', joints: ['chevilles'] }] })) });
+const eP = { id: 'x', cat: 'postural', joints: ['chevilles'] }, W = '2026-11-30';
+const postural = done => {
+  const logs = Object.fromEntries(done.map(([sid, kg, ans], i) => [W + '|' + sid, { start: i + 1, done: true, ex: { x: R(kg, 8, 8, 8) }, ...(ans === null ? {} : { checkin: { zA: ans } }) }]));
+  const sid = ['l', 'm', 'j', 'v'][done.length], all = L.pastTimes(logs, eP, sid, W, 99);
+  const { past, efforts, guard } = L.applyGuard(all, all.map(() => null), L.guard(logs, zones, eP, sid, W, 99, need));
+  const h = L.progressionHint(past[past.length - 1].sets, { range: [8, 12], need: 3, inc: 2.5, past: past.map(t => t.sets), n: 3, efforts, guard });
+  return [h.kg, h.target.join('-')];
+};
+assert.deepStrictEqual(postural([['l', 60, 2]]), [55, '8-8-8']);
+assert.deepStrictEqual(postural([['l', 60, 2], ['m', 55, null]]), [55, '8-8-8'], 'une seule baisse');
+assert.deepStrictEqual(postural([['l', 60, 2], ['m', 55, 0]]), [60, '8-8-8'], 'sortie');
+assert.deepStrictEqual(postural([['l', 60, 2], ['m', 55, 0], ['j', 60, 0]]), [60, '8-8-9'], 'moteur normal');
 L.setProgram(DEF);
 
 // Petit programme valide
