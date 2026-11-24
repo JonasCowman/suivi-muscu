@@ -375,4 +375,42 @@ L.setProgram(DEF);
 // Petit programme valide
 const mini = { format: 'suivi-muscu-programme', version: 1, name: 'Test', start: '2027-01-04', weeks: 4, keyLifts: [], mesos: [{ id: 'A', name: 'Bloc', from: 1, to: 4, bigR: [8, 12], rirBig: '2', rirIso: '1' }], sessions: [{ id: 's1', name: 'Full body', ex: [{ id: 'squat', n: 'Squat', s: 3, r: [8, 12], rest: 120, big: true, muscles: { quadriceps: 1 } }] }] };
 assert.deepStrictEqual(L.validateProgram(mini), []);
+// Programme figé : un profil sans programme enregistré garde une copie du programme par défaut d'aujourd'hui
+assert.deepStrictEqual(mig.program, DEF);
+assert.notStrictEqual(mig.program, DEF, 'copie, jamais le même objet');
+const prof = { prenom: 'X', sexe: 'f', taille: 170, start: '2027-01-04' };
+for (const program of [undefined, null]) assert.deepStrictEqual(L.migrate({ v: 2, logs: {}, profile: prof, program }, DEF).program, DEF, 'profil ou ancienne sauvegarde sans programme');
+assert.deepStrictEqual(L.migrate(L.migrate({ v: 2, logs: {}, profile: prof }, DEF), mini).program, DEF, 'un nouveau programme par défaut ne remplace pas le programme figé');
+assert.deepStrictEqual(L.migrate({ v: 2, logs: {}, profile: prof, program: mini }, DEF).program, mini, 'programme importé gardé');
+assert.strictEqual(L.migrate({ v: 2, logs: {}, profile: prof, program: { format: 'x' } }, DEF).program, null, 'programme illisible : rien de figé');
+assert.strictEqual(L.migrate({ v: 2, logs: {} }, DEF).program, null, 'pas de profil : rien à figer');
+L.setProgram(DEF);
+const imported = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: { decline: [{ kg: 60, reps: 8, done: true }], hack: [{ kg: 9 }], perso: [{ kg: 5, reps: 5, done: true }] } } }, profile: prof, program: mini }, DEF);
+
+// Historique : nom et muscles des exercices déjà faits, sortis du programme actif
+assert.deepStrictEqual(imported.oldEx, { decline: { n: ex('decline').n, muscles: ex('decline').muscles } }, 'retrouvé dans le programme par défaut, seulement si une série est faite');
+assert.deepStrictEqual(L.migrate(clone(imported), DEF), imported, 'migration rejouable sans effet');
+assert.deepStrictEqual(mig.oldEx, {}, 'exercices encore au programme : rien à garder');
+assert.deepStrictEqual(L.oldExFrom(imported.logs, DEF, mini), imported.oldEx);
+assert.deepStrictEqual(L.oldExFrom(imported.logs, DEF, DEF), {});
+const kept = { decline: { n: 'Autre nom', muscles: { dos: 1 } } };
+assert.deepStrictEqual(L.migrate({ ...clone(imported), oldEx: kept }, DEF).oldEx, kept, 'la définition enregistrée passe avant celle du programme par défaut');
+assert.deepStrictEqual(L.migrate({ v: 2, logs: {}, profile: prof, program: mini, oldEx: { '<b>': { n: 'x', muscles: {} }, constructor: { n: 'x' }, a: { n: ' ' }, b: 5, c: { n: 'C', muscles: { nez: 1, dos: 2, pecs: '1', biceps: 0.5 } }, d: { n: 'D', muscles: 'x' } } }, DEF).oldEx, { c: { n: 'C', muscles: { biceps: 0.5 } }, d: { n: 'D', muscles: {} } }, 'sauvegarde importée : valeurs fausses retirées');
+for (const v of [null, 5, [], 'x']) assert.deepStrictEqual(L.migrate({ v: 2, logs: {}, oldEx: v }, DEF).oldEx, {});
+L.setProgram(mini);
+assert.deepStrictEqual(L.exMuscles('decline', imported.oldEx), DEF.sessions[0].ex.find(e => e.id === 'decline').muscles);
+assert.deepStrictEqual(L.exMuscles('squat', { squat: { n: 'x', muscles: { dos: 1 } } }), { quadriceps: 1 }, 'le programme actif passe avant');
+assert.deepStrictEqual(L.exMuscles('inconnu', imported.oldEx), {});
+assert.deepStrictEqual(L.exMuscles('decline'), {});
+
+// Périodes de la carte : mois au calendrier depuis la première séance, saison depuis le début du programme (mini : 04/01/2027)
+const wkLog = d => ({ [d + '|s1']: { ex: { a: [{ kg: 1, reps: 1, done: true }] } } });
+assert.strictEqual(L.periodWeeks(4, wkLog('2026-11-23'), '2027-01-04'), 4, 'un nouveau programme ne vide pas le dernier mois');
+assert.strictEqual(L.periodWeeks(13, wkLog('2026-11-23'), '2027-01-04'), 7);
+assert.strictEqual(L.periodWeeks('all', wkLog('2026-11-23'), '2027-01-11'), 2);
+assert.strictEqual(L.periodWeeks(4, {}, '2027-01-11'), 2, 'sans séance : depuis le début du programme');
+assert.strictEqual(L.periodWeeks(4, wkLog('2027-01-11'), '2027-01-18'), 3, 'première séance après le début du programme : inchangé');
+assert.strictEqual(L.periodWeeks(4, { '2026-11-23|s1': { ex: { a: [{ kg: 1 }] } } }, '2027-01-04'), 1, 'séance ouverte sans série faite : ignorée');
+assert.strictEqual(L.periodWeeks('all', {}, '2026-12-21'), 1, 'programme pas encore commencé');
+L.setProgram(DEF);
 console.log('logic ok');

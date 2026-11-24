@@ -1,8 +1,9 @@
 // Interface. Données stockées uniquement sur l'appareil (localStorage).
 const KEY = 'muscu-v1';
-// profile = { prenom, sexe: 'h' | 'f', taille, start, trackedZones } ; program = programme importé (null = programme par défaut)
+// profile = { prenom, sexe: 'h' | 'f', taille, start, trackedZones } ; program = programme suivi (null seulement avant la création du profil)
+// oldEx : exercices déjà faits, sortis du programme : { id: { n, muscles } }
 // logs et fatigue : rangés par lundi de la semaine ("2026-11-23|lundi") ; shifts : lundis où le programme a été décalé
-const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null });
+const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null, oldEx: {} });
 const today = () => new Date().toLocaleDateString('sv-SE');
 let db = blank();
 const raw = localStorage.getItem(KEY);
@@ -14,7 +15,9 @@ if (raw) {
   db = migrate(old, DEFAULT_PROGRAM, today()) || db;
 }
 const save = () => localStorage.setItem(KEY, JSON.stringify(db));
+if (raw && db.program && !JSON.parse(raw).program) save(); // programme figé par migrate() : enregistré avant toute mise à jour de l'appli
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+const defaultCopy = () => JSON.parse(JSON.stringify(DEFAULT_PROGRAM));
 const applyProgram = () => setProgram(db.program || DEFAULT_PROGRAM, db.profile && db.profile.start);
 applyProgram();
 
@@ -285,14 +288,14 @@ function chart(exId) {
 
 // Séries faites par muscle sur la période (en semaines), comparées au volume prévu par le programme
 function muscleStats(period) {
-  const cur = wk(), elapsed = Math.max(1, weekIndex(cur)), n = period === 'all' ? elapsed : Math.min(period, elapsed), from = addDays(cur, -7 * (n - 1));
+  const cur = wk(), n = periodWeeks(period, db.logs, cur), from = addDays(cur, -7 * (n - 1));
   const sets = {};
   for (const [k, log] of Object.entries(db.logs)) {
     const key = k.split('|')[0];
     if (key < from || key > cur) continue;
     for (const [exId, arr] of Object.entries(log.ex)) {
       const done = doneSets(arr).length;
-      for (const [m, f] of Object.entries(exMuscles(exId))) sets[m] = (sets[m] || 0) + done * f;
+      for (const [m, f] of Object.entries(exMuscles(exId, db.oldEx))) sets[m] = (sets[m] || 0) + done * f;
     }
   }
   const plan = plannedWeekly(), fills = {};
@@ -307,12 +310,12 @@ function viewMuscleMap() {
   h += `<div class="mut" style="display:flex;justify-content:space-around;margin-top:4px"><span>Face</span><span>Dos</span></div>`;
   if (sel) {
     const per = (st.sets[sel] || 0) / st.n;
-    h += `<div class="banner info" style="margin:10px 0 0"><b style="font-size:18px">${esc(MUSCLES[sel])}</b><br>${fmt(st.sets[sel] || 0)} séries sur ${st.n} semaine${st.n > 1 ? 's' : ''} · ${fmt(per)} par semaine (prévu ${fmt(st.plan[sel] || 0)})</div>`;
+    h += `<div class="banner info" style="margin:10px 0 0"><b style="font-size:18px">${esc(MUSCLES[sel])}</b><br>${fmt(st.sets[sel] || 0)} séries sur ${st.n} semaine${st.n > 1 ? 's' : ''} · ${fmt(per)} par semaine (${st.plan[sel] ? `prévu ${fmt(st.plan[sel])}` : 'non prévu'})</div>`;
   } else h += `<div class="mut" style="text-align:center;margin-top:6px">Touche un muscle pour le détail. Plus c'est cyan, plus tu es proche du volume prévu.</div>`;
   h += `</div><div class="card">`;
-  for (const m of Object.keys(MUSCLES).filter(m => st.plan[m]).sort((a, b) => st.plan[b] - st.plan[a])) {
-    const per = (st.sets[m] || 0) / st.n, pct = Math.min(100, Math.round(per / st.plan[m] * 100));
-    h += `<div data-a="muscle" data-m="${m}" style="padding:6px 0;cursor:pointer${m === sel ? ';color:var(--cyan)' : ''}"><div class="row"><span>${esc(MUSCLES[m])}</span><span class="mut">${fmt(per)} / ${fmt(st.plan[m])} séries par sem.</span></div><div class="bar" style="margin-top:4px"><div style="width:${pct}%"></div></div></div>`;
+  for (const m of Object.keys(MUSCLES).filter(m => st.plan[m] || st.sets[m]).sort((a, b) => (st.plan[b] || 0) - (st.plan[a] || 0))) {
+    const per = (st.sets[m] || 0) / st.n, plan = st.plan[m], pct = plan ? Math.min(100, Math.round(per / plan * 100)) : 0;
+    h += `<div data-a="muscle" data-m="${m}" style="padding:6px 0;cursor:pointer${m === sel ? ';color:var(--cyan)' : ''}"><div class="row"><span>${esc(MUSCLES[m])}</span><span class="mut">${plan ? `${fmt(per)} / ${fmt(plan)} séries par sem.` : `${fmt(per)} séries par sem. · non prévu`}</span></div>${plan ? `<div class="bar" style="margin-top:4px"><div style="width:${pct}%"></div></div>` : ''}</div>`;
   }
   return h + `<div class="mut" style="margin-top:6px">Un muscle secondaire compte pour une demi-série (ex. triceps au développé).</div></div>`;
 }
@@ -320,9 +323,12 @@ function viewMuscleMap() {
 function viewStats() {
   const w = week(), key = wk();
   const opts = P.sessions.flatMap(s => s.ex).filter((e, i, a) => a.findIndex(x => x.id === e.id) === i);
-  if (!opts.some(e => e.id === ui.chartEx)) ui.chartEx = ((P.keyLifts || []).find(exById)) || opts[0].id;
+  // Exercices sortis du programme ayant une courbe (nom inconnu si leur programme a été remplacé avant l'ajout de oldEx)
+  const olds = [...new Set(Object.values(db.logs).flatMap(l => Object.keys(l.ex)))].filter(id => !exById(id) && Object.keys(bestByWeek(id)).length).map(id => ({ id, n: (db.oldEx[id] || {}).n || id }));
+  const option = e => `<option value="${e.id}" ${e.id === ui.chartEx ? 'selected' : ''}>${esc(e.n)}</option>`;
+  if (![...opts, ...olds].some(e => e.id === ui.chartEx)) ui.chartEx = ((P.keyLifts || []).find(exById)) || opts[0].id;
   const data = bestByWeek(ui.chartEx), ws = Object.keys(data).sort();
-  let h = `<h1>Analytics</h1>${viewMuscleMap()}<h2>Progression</h2><div class="card"><select data-in="chart" style="width:100%;font:inherit;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px">${opts.map(e => `<option value="${e.id}" ${e.id === ui.chartEx ? 'selected' : ''}>${esc(e.n)}</option>`).join('')}</select>`;
+  let h = `<h1>Analytics</h1>${viewMuscleMap()}<h2>Progression</h2><div class="card"><select data-in="chart" style="width:100%;font:inherit;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px">${opts.map(option).join('')}${olds.length ? `<optgroup label="Anciens exercices">${olds.map(option).join('')}</optgroup>` : ''}</select>`;
   h += `<div class="row" style="margin:10px 0 4px"><span class="mut">Charge estimée sur 1 rep</span><b>${ws.length ? fmt(data[ws[ws.length - 1]]) + ' kg' : '—'}</b></div>${chart(ui.chartEx)}<div class="mut">Les pointillés marquent les semaines allégées.</div></div>`;
 
   if ((P.keyLifts || []).length) h += `<h2>Objectifs de charge (+7 à 10 %)</h2><div class="card">`;
@@ -390,7 +396,7 @@ function readProfile(d, k) {
 }
 
 function viewProgramCard() {
-  const custom = !!db.program;
+  const custom = !!db.program && JSON.stringify(db.program) !== JSON.stringify(DEFAULT_PROGRAM);
   let h = `<h2>Programme</h2><div class="card"><div style="font-weight:600">${esc(P.name)}</div><div class="mut">${P.weeks} semaines · ${P.sessions.length} séances par semaine · ${P.mesos.filter(m => !m.deload).length} mésocycles${custom ? ' · importé' : ' · par défaut'}</div>`;
   h += `<div class="row" style="margin-top:10px"><button style="flex:1" data-a="prog-export">Télécharger (modèle)</button><button style="flex:1" data-a="prog-import">Importer</button><input type="file" accept="application/json,.json" id="progFile" hidden></div>`;
   if (custom) h += `<button class="ghost" style="width:100%;margin-top:8px" data-a="prog-default">Revenir au programme par défaut</button>`;
@@ -435,6 +441,7 @@ function draft(k) { return k === 's' ? ui.setup : (ui.profDraft = ui.profDraft |
 // Change de programme. Même date de début = même programme retouché : on reste à la même semaine.
 function useProgram(p) {
   const before = progStart();
+  db.oldEx = { ...db.oldEx, ...oldExFrom(db.logs, P, p) };
   db.program = p;
   if (db.profile && progStart() !== before) db.profile.start = null;
   save(); applyProgram(); ui.sid = null; ui.open = null; ui.chartEx = null; ui.focus = false;
@@ -525,7 +532,7 @@ document.addEventListener('click', ev => {
   else if (a === 'setup-save') {
     const p = readProfile(ui.setup, 's');
     if (p.error) { ui.err.setup = p.error; return render(); }
-    delete ui.err.setup; db.profile = { ...p, trackedZones: [] }; ui.setup = {}; ui.progErr = []; ui.progOk = ''; save(); applyProgram(); ui.tab = 'dash'; render();
+    delete ui.err.setup; db.profile = { ...p, trackedZones: [] }; db.program = db.program || defaultCopy(); ui.setup = {}; ui.progErr = []; ui.progOk = ''; save(); applyProgram(); ui.tab = 'dash'; render();
   }
   else if (a === 'prof-save') {
     const p = readProfile(ui.profDraft || db.profile, 'p');
@@ -535,7 +542,7 @@ document.addEventListener('click', ev => {
   else if (a === 'prog-export') downloadJson(db.program || DEFAULT_PROGRAM, 'programme-modele.json');
   else if (a === 'prog-import') $('#progFile').click();
   else if (a === 'prog-default' && confirm('Revenir au programme par défaut ? Tes séances enregistrées sont conservées.')) {
-    useProgram(null); ui.progOk = `Programme par défaut rétabli · semaine ${week()}.`; ui.progErr = []; render();
+    useProgram(defaultCopy()); ui.progOk = `Programme par défaut rétabli · semaine ${week()}.`; ui.progErr = []; render();
   }
   else if (a === 'export') downloadJson(db, `muscu-${today()}.json`);
   else if (a === 'import-btn') $('#importFile').click();

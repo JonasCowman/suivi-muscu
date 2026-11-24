@@ -95,7 +95,16 @@ function validateProgram(p) {
   return err;
 }
 
-function exMuscles(id) { for (const s of P.sessions) for (const e of s.ex) if (e.id === id) return e.muscles || {}; return {}; }
+// Programme actif, sinon exercice gardé d'un ancien programme
+function exMuscles(id, oldEx = {}) { for (const s of P.sessions) for (const e of s.ex) if (e.id === id) return e.muscles || {}; return (oldEx[id] || {}).muscles || {}; }
+
+// Exercices de « from » déjà faits et absents de « active » : { id: { n, muscles } }, pour garder leur courbe et leurs séries
+function oldExFrom(logs, from, active) {
+  const ids = new Set(active.sessions.flatMap(s => s.ex.map(e => e.id))), out = {};
+  const done = new Set(Object.values(logs).flatMap(l => Object.keys(l.ex).filter(id => doneSets(l.ex[id]).length)));
+  for (const s of from.sessions) for (const e of s.ex) if (done.has(e.id) && !ids.has(e.id)) out[e.id] = { n: e.n, muscles: e.muscles };
+  return out;
+}
 
 // Séries prévues par muscle sur une semaine normale du programme
 function plannedWeekly() {
@@ -118,6 +127,14 @@ function weekIndex(d) { return dayDiff(mondayOf(P.start), mondayOf(d)) / 7 + 1; 
 function weekOf(d, shifts = []) {
   const from = mondayOf(P.start), m = mondayOf(d);
   return Math.max(1, Math.min(P.weeks, weekIndex(d) - shifts.filter(s => s >= from && s <= m).length));
+}
+
+// Semaines comptées par une période de la carte : la saison part du début du programme, les mois de la première séance si elle est plus ancienne
+function periodWeeks(period, logs, cur) {
+  const season = Math.max(1, weekIndex(cur));
+  if (period === 'all') return season;
+  const first = Object.entries(logs).filter(([, l]) => Object.values(l.ex).some(a => doneSets(a).length)).map(([k]) => k.split('|')[0]).sort()[0] || cur;
+  return Math.min(period, Math.max(season, dayDiff(first, cur) / 7 + 1));
 }
 
 function mesoOf(week) { return P.mesos.find(m => week >= m.from && week <= m.to); }
@@ -359,6 +376,13 @@ function cleanZones(v) {
   return out;
 }
 
+// Exercices sortis du programme : { id: { n, muscles } }
+function cleanOldEx(v) {
+  const out = {};
+  for (const [id, e] of Object.entries(isObj(v) ? v : {})) if (isId(id) && isObj(e) && isText(e.n)) out[id] = { n: e.n, muscles: Object.fromEntries(Object.entries(isObj(e.muscles) ? e.muscles : {}).filter(([m, k]) => Object.hasOwn(MUSCLES, m) && typeof k === 'number' && k > 0 && k <= 1)) };
+  return out;
+}
+
 // Check-in d'une séance : { zone: 0 rien, 1 gêne, 2 douleur } ; zone sans réponse : absente
 function cleanCheckin(v) {
   const out = {};
@@ -377,12 +401,14 @@ function cleanWarm(w) {
 // v1 : séances rangées par numéro de semaine ("3|lundi"), mélangées après un décalage. v2 : par lundi ("2026-12-07|lundi").
 function migrate(d, defaultProgram, today) {
   if (!isObj(d) || !isObj(d.logs)) return null;
-  const program = d.program && !validateProgram(d.program).length ? d.program : null;
+  let program = d.program && !validateProgram(d.program).length ? d.program : null;
   const height = Number(d.height) > 0 ? Number(d.height) : 183;
   let profile = null;
   if (isObj(d.profile)) {
     profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null, trackedZones: cleanZones(d.profile.trackedZones) };
   } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null, trackedZones: [] };
+  // Profil sans programme enregistré : copie figée, pour qu'un futur programme par défaut ne remplace jamais le sien
+  if (profile && !d.program) program = JSON.parse(JSON.stringify(defaultProgram));
   const start = () => mondayOf((profile && profile.start) || (program || defaultProgram).start);
   const weekKey = n => addDays(start(), 7 * (n - 1));
   let shifts = Array.isArray(d.shifts) ? d.shifts.filter(isDate) : [];
@@ -415,7 +441,8 @@ function migrate(d, defaultProgram, today) {
     for (const k of MESURES) if (typeof m[k] === 'number' && m[k] > 0) out[k] = m[k];
     return out;
   }).filter(m => Object.keys(m).length > 1);
-  return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
+  const oldEx = { ...oldExFrom(logs, defaultProgram, program || defaultProgram), ...cleanOldEx(d.oldEx) };
+  return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };

@@ -1,5 +1,5 @@
 // Hors ligne : cache de l'appli. Change VERSION à chaque mise à jour des fichiers.
-const VERSION = 'muscu-13';
+const VERSION = 'muscu-14';
 const FILES = ['./', 'index.html', 'app.js', 'logic.js', 'programme-defaut.js', 'body-data.js', 'body.js', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'fonts/barlow-400.woff2', 'fonts/barlow-500.woff2', 'fonts/barlow-600.woff2', 'fonts/barlowcond-600.woff2', 'fonts/barlowcond-700.woff2'];
 
 self.addEventListener('install', e => e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting())));
