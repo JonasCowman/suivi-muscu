@@ -135,6 +135,11 @@ assert.deepStrictEqual(mig.mesures, [{ date: '2026-11-23', poids: 82, taille: 80
 assert.deepStrictEqual(mig.profile, { prenom: '', sexe: 'h', taille: 183, start: null });
 assert.deepStrictEqual(mig.daily, old.daily);
 assert.deepStrictEqual(L.migrate(clone(mig), DEF), mig, 'migration rejouable sans effet');
+// RIR réel : entier de 0 à 5 (5 = « 5 ou plus »), facultatif ; une valeur fausse est retirée sans perdre la série
+for (const v of [0, 3, 5]) assert.ok(L.isRir(v));
+for (const v of [-1, 6, 1.5, '2', null, undefined, NaN]) assert.ok(!L.isRir(v));
+const rirs = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: { a: [{ kg: 1, reps: 1, rir: 0, done: true }, { kg: 2, reps: 1, rir: '<b>', done: true }, { kg: 3, reps: 1, done: true }] } } } }, DEF);
+assert.deepStrictEqual(rirs.logs['2026-11-23|lundi'].ex.a, [{ kg: 1, reps: 1, rir: 0, done: true }, { kg: 2, reps: 1, done: true }, { kg: 3, reps: 1, done: true }]);
 // Deux anciennes semaines tombant la même semaine réelle : aucune donnée perdue
 const coll = L.migrate({ logs: { '1|lundi': { start: Date.parse('2026-11-30T18:00:00'), ex: { a: [{ kg: 1, reps: 1, done: true }] } }, '2|lundi': { start: Date.parse('2026-12-01T18:00:00'), ex: { a: [{ kg: 2, reps: 1, done: true }] } } } }, DEF);
 assert.deepStrictEqual(Object.values(coll.logs).map(l => l.ex.a[0].kg).sort(), [1, 2]);

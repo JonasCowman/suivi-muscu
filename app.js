@@ -148,13 +148,13 @@ function viewFocus() {
   h += `<div class="mut" id="elapsed">${log.start ? '' : 'Pas commencée'}</div><div class="bar" style="margin:6px 0 14px"><div style="width:${pct}%"></div></div>`;
   h += `<div class="card"><div class="disp">${esc(e.n)}</div>`;
   if (e.note) h += `<div class="warnchip">⚠ ${esc(e.note)}</div>`;
-  h += `<div><span class="tag c">${n} x ${r[0]}-${r[1]}</span><span class="tag c">RIR ${rir}</span>${e.tempo ? `<span class="tag">Tempo ${esc(e.tempo)}</span>` : ''}<span class="tag">Repos ${mmss(e.rest)}</span></div>`;
+  h += `<div><span class="tag c">${n} x ${r[0]}-${r[1]}</span><span class="tag c">RIR visé ${rir}</span>${e.tempo ? `<span class="tag">Tempo ${esc(e.tempo)}</span>` : ''}<span class="tag">Repos ${mmss(e.rest)}</span></div>`;
   h += `<div class="mut" style="margin-top:8px;color:var(--cyan)">${esc(hint.text)}</div>`;
-  h += `<table class="sets"><tr><th>Série</th><th>Reps</th><th>Charge (kg)</th><th>RIR</th><th></th></tr>`;
+  h += `<table class="sets"><tr><th>Série</th><th>Reps</th><th>Charge (kg)</th><th>RIR réel</th><th></th></tr>`;
   for (let i = 0; i < n; i++) {
     const x = sets[i] || {};
     const kg = x.kg ?? sets.slice(0, i).reverse().find(p => p && p.kg != null)?.kg ?? hint.kg ?? '';
-    h += `<tr class="${i === cur ? 'cur' : ''}"><td>${i + 1}</td><td><input type="number" inputmode="numeric" min="0" placeholder="${r[0]}-${r[1]}" value="${esc(x.reps ?? '')}" data-in="reps" data-ex="${e.id}" data-i="${i}"></td><td><input type="number" inputmode="decimal" step="0.5" min="0" value="${esc(kg)}" data-in="kg" data-ex="${e.id}" data-i="${i}"></td><td class="mut">${rir}</td><td><button class="check ${x.done ? 'on' : ''}" data-a="set" data-ex="${e.id}" data-i="${i}" aria-label="Valider la série ${i + 1}">${x.done ? '✓' : ''}</button></td></tr>`;
+    h += `<tr class="${i === cur ? 'cur' : ''}"><td>${i + 1}</td><td><input type="number" inputmode="numeric" min="0" placeholder="${r[0]}-${r[1]}" value="${esc(x.reps ?? '')}" data-in="reps" data-ex="${e.id}" data-i="${i}" aria-label="Reps, série ${i + 1}"></td><td><input type="number" inputmode="decimal" step="0.5" min="0" value="${esc(kg)}" data-in="kg" data-ex="${e.id}" data-i="${i}" aria-label="Charge en kg, série ${i + 1}"></td><td><select data-in="rir" data-ex="${e.id}" data-i="${i}" aria-label="RIR réel, série ${i + 1}">${['', 0, 1, 2, 3, 4, 5].map(v => `<option value="${v}"${v === (x.rir ?? '') ? ' selected' : ''}>${v === '' ? '–' : v === 5 ? '5+' : v}</option>`).join('')}</select></td><td><button class="check ${x.done ? 'on' : ''}" data-a="set" data-ex="${e.id}" data-i="${i}" aria-label="Valider la série ${i + 1}">${x.done ? '✓' : ''}</button></td></tr>`;
   }
   h += `</table>${ui.err[e.id] ? `<div class="err">${esc(ui.err[e.id])}</div>` : ''}`;
   const em = exMuscles(e.id);
@@ -468,7 +468,7 @@ document.addEventListener('click', ev => {
 
 document.addEventListener('input', ev => {
   const i = ev.target;
-  if (i.dataset.in === 'kg' || i.dataset.in === 'reps') {
+  if (['kg', 'reps', 'rir'].includes(i.dataset.in)) {
     const log = logFor(wk(), ui.sid), x = setAt(log.ex[i.dataset.ex] || (log.ex[i.dataset.ex] = []), +i.dataset.i);
     x[i.dataset.in] = i.value === '' ? undefined : +i.value; save();
   } else if (i.dataset.s) draft('s')[i.dataset.s] = i.value;

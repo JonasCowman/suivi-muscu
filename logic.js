@@ -184,6 +184,11 @@ function navyBodyFat(sex, waist, neck, height, hips) {
 
 const MESURES = ['poids', 'poitrine', 'taille', 'hanches', 'cuisse', 'bras', 'cou'];
 
+// RIR réel d'une série (champ "rir", facultatif) : 0 à 5, 5 = « 5 ou plus »
+const isRir = v => isInt(v, 0, 5);
+// Garde la série, sans son RIR s'il n'est pas valide
+function cleanSet(s) { if (!isObj(s)) return {}; const { rir, ...rest } = s; return isRir(rir) ? s : rest; }
+
 // Met des données enregistrées (ou une sauvegarde) au format actuel sans perdre de séance. null si ce n'est pas une sauvegarde.
 // v1 : séances rangées par numéro de semaine ("3|lundi"), mélangées après un décalage. v2 : par lundi ("2026-12-07|lundi").
 function migrate(d, defaultProgram, today) {
@@ -206,7 +211,7 @@ function migrate(d, defaultProgram, today) {
     const [w, sid] = k.split('|');
     if (!isObj(log) || !isId(sid)) continue;
     const ex = {};
-    for (const [id, sets] of Object.entries(isObj(log.ex) ? log.ex : {})) if (Array.isArray(sets) && isId(id)) ex[id] = Array.from(sets, s => (isObj(s) ? s : {}));
+    for (const [id, sets] of Object.entries(isObj(log.ex) ? log.ex : {})) if (Array.isArray(sets) && isId(id)) ex[id] = Array.from(sets, cleanSet);
     let key = isDate(w) ? mondayOf(w) : null;
     if (!key) {
       if (!(Number(w) > 0) || (!Object.keys(ex).length && !log.done)) continue;
@@ -229,4 +234,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, e1rm, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, e1rm, isRir, navyBodyFat, getProgram: () => P };
