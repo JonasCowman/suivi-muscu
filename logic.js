@@ -125,10 +125,11 @@ function mondayOf(d) { return addDays(d, -((new Date(Date.parse(d)).getUTCDay() 
 function weekIndex(d) { return dayDiff(mondayOf(P.start), mondayOf(d)) / 7 + 1; }
 
 // Semaine du programme. shifts = lundis à partir desquels le programme a été décalé d'une semaine.
-function weekOf(d, shifts = []) {
-  const from = mondayOf(P.start), m = mondayOf(d);
-  return Math.max(1, Math.min(P.weeks, weekIndex(d) - shifts.filter(s => s >= from && s <= m).length));
-}
+function rawWeek(d, shifts) { const from = mondayOf(P.start), m = mondayOf(d); return weekIndex(d) - shifts.filter(s => s >= from && s <= m).length; }
+function weekOf(d, shifts = []) { return Math.max(1, Math.min(P.weeks, rawWeek(d, shifts))); }
+
+// 'last' : dernière semaine du programme, 'over' : terminé, sinon null
+function cycleState(d, shifts = []) { const w = rawWeek(d, shifts); return w > P.weeks ? 'over' : w === P.weeks ? 'last' : null; }
 
 // Zone du dessin : muscles possibles par priorité. Le premier visé par le programme, sinon le dernier (null = zone neutre)
 function zoneMuscle(list, plan) { return list.find(m => plan[m]) ?? list[list.length - 1]; }
@@ -337,7 +338,10 @@ function pickEx(id, byId, allowed, used, twin) {
   if (fresh) return fresh;
   // Il ne reste qu'un doublon : un exercice relié du même type qui travaille le muscle, sinon le doublon
   if (kind.length) return cand.find(x => !twin.has(x) && isPoly(byId[x]) === isPoly(e) && byId[x].muscles[m] >= 0.5 && (e.swapIds.includes(x) || byId[x].swapIds.includes(id))) || kind[0];
-  return same.find(x => !twin.has(x)) || same[0] || null;
+  if (same.length) return same.find(x => !twin.has(x)) || same[0];
+  // Dernier recours : un exercice relié qui travaille le muscle à 0,5, sans doublon, du même type d'abord
+  const link = cand.filter(x => !twin.has(x) && byId[x].muscles[m] >= 0.5 && (e.swapIds.includes(x) || byId[x].swapIds.includes(id)));
+  return link.find(x => isPoly(byId[x]) === isPoly(e)) || link[0] || null;
 }
 
 function volumeOf(sessions, byId) {
@@ -519,7 +523,9 @@ function migrate(d, defaultProgram, today) {
   const oldEx = { ...oldExFrom(logs, defaultProgram, program || defaultProgram), ...cleanOldEx(d.oldEx) };
   // Programme remplacé, avec la date de début qui était choisie dans le profil
   const prev = isObj(d.prev) && !validateProgram(d.prev.program).length ? { program: d.prev.program, start: isDate(d.prev.start) ? d.prev.start : null } : null;
-  return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx, prev };
+  // Programme en attente de sa date de début
+  const next = profile && d.next && !validateProgram(d.next).length ? d.next : null;
+  return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx, prev, next };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, generateProgram, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, cycleState, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, generateProgram, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };

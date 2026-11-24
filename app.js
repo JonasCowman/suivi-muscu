@@ -2,9 +2,10 @@
 const KEY = 'muscu-v1';
 // profile = { prenom, sexe: 'h' | 'f', taille, start, trackedZones } ; program = programme suivi (null seulement avant la création du profil)
 // profile.equipment, profile.refused : réponses du générateur ; prev = { program, start } : programme remplacé, pour y revenir
+// next : nouveau cycle accepté, appliqué à sa date de début (applyNext)
 // oldEx : exercices déjà faits, sortis du programme : { id: { n, muscles } }
 // logs et fatigue : rangés par lundi de la semaine ("2026-11-23|lundi") ; shifts : lundis où le programme a été décalé
-const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null, oldEx: {}, prev: null });
+const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null, oldEx: {}, prev: null, next: null });
 const today = () => new Date().toLocaleDateString('sv-SE');
 let db = blank();
 const raw = localStorage.getItem(KEY);
@@ -81,7 +82,10 @@ function viewDash() {
   if (notStarted) h += `<div class="banner info">Le programme démarre le ${esc(frDate(P.start))}.</div>`;
   h += `<div class="mut" style="margin-bottom:14px">Semaine ${w} sur ${P.weeks}${shiftCount() ? ` · calendrier décalé de ${shiftCount()} sem.` : ''}</div>`;
   if (m.deload) h += `<div class="banner info">Semaine allégée : moitié des séries, mêmes charges, RIR ${esc(P.rirLight || '3-4')}.</div>`;
-  else if (f >= 2) h += `<div class="banner ${adv.level}">Bilan de la semaine dernière : ${f} signaux. ${esc(adv.text)}</div>`;
+  const end = P.generated ? cycleState(t, db.shifts) : null;
+  if (db.next) h += `<div class="banner info">Nouveau cycle prêt : début le ${esc(frDate(db.next.start))}.<button class="ghost" style="width:100%;min-height:44px;margin-top:8px" data-a="next-cancel">Annuler ce nouveau cycle</button></div>`;
+  else if (end) h += `<div class="banner info">${end === 'last' ? 'Dernière semaine du programme.' : 'Programme terminé. Les séances restent allégées jusqu\'au nouveau cycle.'}<button class="primary" style="width:100%;min-height:44px;margin-top:8px" data-a="gen-open" data-cycle="1">Préparer un nouveau cycle</button></div>`;
+  if (!m.deload && f >= 2) h += `<div class="banner ${adv.level}">Bilan de la semaine dernière : ${f} signaux. ${esc(adv.text)}</div>`;
   if (isSunday && !db.fatigue[key]) h += `<div class="banner info row" data-a="go-fatigue" style="cursor:pointer"><span>C'est dimanche : fais ton bilan de fatigue</span><span class="chev">›</span></div>`;
   if (P.daily) {
     const done = !!(db.daily[t] || {}).oiseau;
@@ -411,9 +415,10 @@ function viewProgramCard() {
 
 // ---------- Créer un programme ----------
 // ui.gen = { equipment, refused, start, res } ; res = aperçu (null : questions). Cases natives, sans nouveau rendu : la position et le focus restent
-function openGen() {
+// cycle : nouveau cycle. Dernière semaine : lundi prochain, pour finir la semaine allégée
+function openGen(cycle) {
   const saved = db.profile || ui.genSaved || {};
-  ui.gen = { equipment: saved.equipment || Object.keys(EQUIPMENT), refused: saved.refused || [], start: !db.profile ? ui.setup.start || nextMonday() : P.generated ? P.start : nextMonday(), res: null };
+  ui.gen = { equipment: saved.equipment || Object.keys(EQUIPMENT), refused: saved.refused || [], start: !db.profile ? ui.setup.start || nextMonday() : cycle && cycleState(today(), db.shifts) === 'last' ? addDays(wk(), 7) : P.generated && !cycle ? P.start : nextMonday(), res: null };
 }
 
 function viewGen() {
@@ -480,15 +485,22 @@ function useProgram(p) {
   const before = progStart();
   if (db.profile && db.program) db.prev = { program: db.program, start: db.profile.start };
   db.oldEx = { ...db.oldEx, ...oldExFrom(db.logs, P, p) };
-  db.program = p;
+  db.program = p; db.next = null;
   if (db.profile && progStart() !== before) db.profile.start = null;
   save(); applyProgram(); ui.sid = null; ui.open = null; ui.chartEx = null; ui.focus = false;
+}
+
+// Nouveau cycle accepté pendant la dernière semaine ou après : remplace le programme le jour de son début, pas pendant une séance ouverte
+function applyNext() {
+  if (!db.next || db.next.start > today() || ui.focus) return;
+  useProgram(db.next); db.profile.start = null; save(); applyProgram();
 }
 
 // Affiche une erreur sans redessiner la page (la saisie reste en place)
 function showErr(id) { $('#err-' + id).textContent = ui.err[id]; }
 
 function render() {
+  applyNext();
   const v = ui.gen ? viewGen() : !db.profile ? viewSetup() : { dash: viewDash, work: viewWork, stats: viewStats, prof: viewProf }[ui.tab]();
   $('#view').innerHTML = v;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === ui.tab));
@@ -584,7 +596,8 @@ document.addEventListener('click', ev => {
     useProgram(program); db.profile.start = start; save(); applyProgram();
     ui.progOk = `Programme « ${P.name} » repris · semaine ${week()}.`; ui.progErr = []; render();
   }
-  else if (a === 'gen-open') { openGen(); delete ui.err.gen; showGen(); }
+  else if (a === 'next-cancel' && confirm('Annuler le nouveau cycle ? Ton programme actuel ne change pas.')) { db.next = null; save(); render(); }
+  else if (a === 'gen-open') { openGen(!!t.dataset.cycle); delete ui.err.gen; showGen(); }
   else if (a === 'gen-close') { ui.gen = null; render(); window.scrollTo(0, 0); }
   else if (a === 'gen-edit') { ui.gen.res = null; showGen(); }
   else if (a === 'gen-preview') {
@@ -592,6 +605,12 @@ document.addEventListener('click', ev => {
     ui.err.gen = !res ? 'Choisis une date de début.' : !res.program ? 'Aucun exercice possible : coche plus de matériel ou refuse moins d\'exercices.' : '';
     if (ui.err.gen) return showErr('gen');
     g.res = res; showGen();
+  }
+  else if (a === 'gen-accept' && P.generated && db.profile && cycleState(today(), db.shifts) && ui.gen.start > today()) {
+    // Garde la semaine allégée en cours : le nouveau cycle attend sa date
+    const { res, equipment, refused, start } = ui.gen;
+    if (!confirm(`Commencer ce nouveau cycle le ${frDate(start)} ? Ton programme actuel continue jusque-là.`)) return;
+    db.next = res.program; Object.assign(db.profile, { equipment, refused }); ui.gen = null; ui.tab = 'dash'; save(); render(); window.scrollTo(0, 0);
   }
   else if (a === 'gen-accept' && (!db.profile || confirm(`Remplacer ton programme « ${P.name} » ? Tes séances enregistrées sont conservées, et tu pourras revenir à ce programme.`))) {
     const { res, equipment, refused } = ui.gen;

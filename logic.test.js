@@ -489,4 +489,21 @@ L.setProgram(DEF);
 assert.strictEqual(L.rirFor(7, ex('decline')), '3-4', 'programme sans rirLight : inchangé');
 assert.ok(L.fatigueAdvice(3).text.includes('RIR 3-4.'));
 assert.ok(L.validateProgram({ ...clone(mini), rirLight: 3 }).some(e => e.includes('rirLight')));
+// Fin de programme : dernière semaine, puis terminé ; les semaines décalées repoussent la fin
+L.setProgram(neutral.program);
+assert.strictEqual(L.cycleState('2027-06-13'), null, 'semaine 23');
+assert.strictEqual(L.cycleState('2027-06-14'), 'last', 'semaine 24');
+assert.strictEqual(L.cycleState('2027-06-20'), 'last');
+assert.strictEqual(L.cycleState('2027-06-21'), 'over');
+assert.strictEqual(L.cycleState('2027-06-21', ['2027-03-01']), 'last', 'décalage : une semaine de plus');
+assert.strictEqual(L.cycleState('2026-12-01'), null, 'pas commencé');
+// Nouveau cycle en attente : appliqué à sa date de début seulement, contrôlé par migrate()
+const nextP = gen(FULL, []).program; nextP.start = '2027-06-21';
+assert.strictEqual(L.migrate({ v: 2, logs: {}, profile: prof, program: mini, next: nextP }, DEF).next.start, '2027-06-21');
+for (const next of [undefined, null, 5, { format: 'x' }]) assert.strictEqual(L.migrate({ v: 2, logs: {}, profile: prof, program: mini, next }, DEF).next, null);
+// Dernier recours : exercice relié qui travaille le muscle à 0,5, sans doublon
+const noFentes = gen(['halteres', 'banc'], ['fentes']);
+assert.strictEqual(list(noFentes)['lower-b'], 'sdjthalteres3 fentesbulgares3 mollets2 crunchsol2');
+assert.deepStrictEqual(noFentes.low.find(x => x.m === 'quadriceps'), { m: 'quadriceps', v: 1.5, base: 6 });
+L.setProgram(DEF);
 console.log('logic ok');
