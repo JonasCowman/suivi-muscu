@@ -1,9 +1,10 @@
 // Interface. Données stockées uniquement sur l'appareil (localStorage).
 const KEY = 'muscu-v1';
 // profile = { prenom, sexe: 'h' | 'f', taille, start, trackedZones } ; program = programme suivi (null seulement avant la création du profil)
+// profile.equipment, profile.refused : réponses du générateur ; prev = { program, start } : programme remplacé, pour y revenir
 // oldEx : exercices déjà faits, sortis du programme : { id: { n, muscles } }
 // logs et fatigue : rangés par lundi de la semaine ("2026-11-23|lundi") ; shifts : lundis où le programme a été décalé
-const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null, oldEx: {} });
+const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null, oldEx: {}, prev: null });
 const today = () => new Date().toLocaleDateString('sv-SE');
 let db = blank();
 const raw = localStorage.getItem(KEY);
@@ -17,8 +18,10 @@ if (raw) {
 const save = () => localStorage.setItem(KEY, JSON.stringify(db));
 if (raw && db.program && !JSON.parse(raw).program) save(); // programme figé par migrate() : enregistré avant toute mise à jour de l'appli
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-const defaultCopy = () => JSON.parse(JSON.stringify(DEFAULT_PROGRAM));
-const applyProgram = () => setProgram(db.program || DEFAULT_PROGRAM, db.profile && db.profile.start);
+// Sans profil : programme neutre du générateur. DEFAULT_PROGRAM (31 semaines) ne sert qu'aux profils existants, voir migrate()
+function neutralProgram() { return generateProgram({ equipment: Object.keys(EQUIPMENT), start: nextMonday() }, LIBRARY).program; }
+function baseProgram() { return db.program || (db.profile ? DEFAULT_PROGRAM : neutralProgram()); }
+const applyProgram = () => setProgram(baseProgram(), db.profile && db.profile.start);
 applyProgram();
 
 const ui = { tab: 'dash', sid: null, open: null, focus: false, chartEx: null, err: {}, rest: null, restEnd: 0, progErr: [], setup: {}, profDraft: null, zone: { label: '', tags: [] } };
@@ -77,7 +80,7 @@ function viewDash() {
   let h = `<div class="row"><div><div class="mut">${hello}${esc(m.phase || '')}${m.kcal ? ' · ' + esc(m.kcal) : ''}</div><h1>${esc(m.name)} · Semaine ${w}</h1></div><span class="pill">RIR ${esc(rirFor(w, { big: true }, f))}</span></div>`;
   if (notStarted) h += `<div class="banner info">Le programme démarre le ${esc(frDate(P.start))}.</div>`;
   h += `<div class="mut" style="margin-bottom:14px">Semaine ${w} sur ${P.weeks}${shiftCount() ? ` · calendrier décalé de ${shiftCount()} sem.` : ''}</div>`;
-  if (m.deload) h += `<div class="banner info">Semaine allégée : moitié des séries, mêmes charges, RIR 3-4.</div>`;
+  if (m.deload) h += `<div class="banner info">Semaine allégée : moitié des séries, mêmes charges, RIR ${esc(P.rirLight || '3-4')}.</div>`;
   else if (f >= 2) h += `<div class="banner ${adv.level}">Bilan de la semaine dernière : ${f} signaux. ${esc(adv.text)}</div>`;
   if (isSunday && !db.fatigue[key]) h += `<div class="banner info row" data-a="go-fatigue" style="cursor:pointer"><span>C'est dimanche : fais ton bilan de fatigue</span><span class="chev">›</span></div>`;
   if (P.daily) {
@@ -131,7 +134,7 @@ function viewWork() {
   h += `<div class="bar" style="margin-bottom:14px"><div style="width:${pct}%"></div></div>`;
   h += viewJoints(log);
   if (f === 2 && !mesoOf(w).deload) h += `<div class="banner mid">Séries bonus retirées et RIR 2 cette semaine (bilan fatigue : 2 signaux).</div>`;
-  if (f >= 3 && !mesoOf(w).deload) h += `<div class="banner high">Semaine allégée anticipée, RIR 3-4 (bilan fatigue : ${f} signaux).</div>`;
+  if (f >= 3 && !mesoOf(w).deload) h += `<div class="banner high">Semaine allégée anticipée, RIR ${esc(P.rirLight || '3-4')} (bilan fatigue : ${f} signaux).</div>`;
   if (!log.done) h += `<button class="primary" style="width:100%;margin-bottom:12px" data-a="start">${log.start ? 'Reprendre la séance' : 'Démarrer la séance'}</button>`;
   for (const e of exs) {
     const n = plannedSets(key, e), r = rangeFor(w, e);
@@ -338,7 +341,7 @@ function viewStats() {
     const pct = ref ? Math.max(0, Math.min(100, (cur - ref) / (target - ref) * 100)) : 0;
     h += `<div style="padding:6px 0"><div class="row"><span>${esc(exById(id).n)}</span><span class="mut">${ref ? `${fmt(ref)} → ${fmt(ref * 1.07)}-${fmt(target)} kg` : 'à mesurer'}</span></div><div class="bar" style="margin-top:5px"><div style="width:${pct}%"></div></div></div>`;
   }
-  if ((P.keyLifts || []).length) h += `<div class="mut" style="margin-top:6px">Référence = ta première semaine enregistrée. En sèche, l'objectif est de garder au moins 95 % de tes meilleures charges.</div></div>`;
+  if ((P.keyLifts || []).length) h += `<div class="mut" style="margin-top:6px">Référence = ta première semaine enregistrée.${P.generated ? '' : ' En sèche, l\'objectif est de garder au moins 95 % de tes meilleures charges.'}</div></div>`;
 
   const f = db.fatigue[key] || {};
   const sig = [['perf', 'Performances en baisse (2 exercices, 2 séances de suite)'], ['motiv', 'Je traîne les pieds pour aller à la salle'], ['sleep', 'Sommeil sous 7 h, ou réveils fatigués 3 nuits ou plus'], ['courb', 'Courbatures encore là après 72 h'], ['poids', 'Perte de poids de plus de 0,7 kg cette semaine (en sèche)']];
@@ -384,7 +387,7 @@ function viewZones() {
   return h + `<div class="err" role="alert">${esc(ui.err.zone || '')}</div><button class="primary" style="width:100%;margin-top:10px" data-a="zone-add">Ajouter la zone</button></div>`;
 }
 
-const progStart = () => (db.program || DEFAULT_PROGRAM).start;
+const progStart = () => baseProgram().start;
 // Premier lancement : jamais une date passée, sinon on arriverait au milieu du programme
 function defaultStart(k) { return k === 's' && progStart() < today() ? nextMonday() : progStart(); }
 
@@ -396,14 +399,48 @@ function readProfile(d, k) {
 }
 
 function viewProgramCard() {
-  const custom = !!db.program && JSON.stringify(db.program) !== JSON.stringify(DEFAULT_PROGRAM);
-  let h = `<h2>Programme</h2><div class="card"><div style="font-weight:600">${esc(P.name)}</div><div class="mut">${P.weeks} semaines · ${P.sessions.length} séances par semaine · ${P.mesos.filter(m => !m.deload).length} mésocycles${custom ? ' · importé' : ' · par défaut'}</div>`;
+  const origin = P.generated ? 'créé dans l\'appli' : JSON.stringify(baseProgram()) === JSON.stringify(DEFAULT_PROGRAM) ? 'par défaut' : 'importé';
+  let h = `<h2>Programme</h2><div class="card"><div style="font-weight:600">${esc(P.name)}</div><div class="mut">${P.weeks} semaines · ${P.sessions.length} séances par semaine · ${P.mesos.filter(m => !m.deload).length} mésocycles · ${origin}</div>`;
   h += `<div class="row" style="margin-top:10px"><button style="flex:1" data-a="prog-export">Télécharger (modèle)</button><button style="flex:1" data-a="prog-import">Importer</button><input type="file" accept="application/json,.json" id="progFile" hidden></div>`;
-  if (custom) h += `<button class="ghost" style="width:100%;margin-top:8px" data-a="prog-default">Revenir au programme par défaut</button>`;
+  h += `<button style="width:100%;min-height:44px;margin-top:8px" data-a="gen-open">${db.profile ? 'Créer un programme' : 'Adapter à mon matériel'}</button>`;
+  if (db.profile && db.prev) h += `<button class="ghost" style="width:100%;min-height:44px;margin-top:8px" data-a="prog-prev">Revenir au programme précédent : ${esc(db.prev.program.name)}</button>`;
   if (ui.progOk) h += `<div class="banner info" style="margin:10px 0 0">${esc(ui.progOk)}</div>`;
   if (ui.progErr.length) h += `<div class="err">Programme refusé :<ul style="margin:4px 0;padding-left:18px">${ui.progErr.slice(0, 8).map(e => `<li>${esc(e)}</li>`).join('')}</ul>${ui.progErr.length > 8 ? `et ${ui.progErr.length - 8} autre(s) erreur(s).` : ''}</div>`;
-  return h + `<div class="mut" style="margin-top:8px;font-size:12px">Pour créer un programme : télécharge le modèle, modifie-le (voir FORMAT-PROGRAMME.md), puis importe-le.</div></div>`;
+  return h + `<div class="mut" style="margin-top:8px;font-size:12px">Pour un programme écrit à la main : télécharge le modèle, modifie-le (voir FORMAT-PROGRAMME.md), puis importe-le.</div></div>`;
 }
+
+// ---------- Créer un programme ----------
+// ui.gen = { equipment, refused, start, res } ; res = aperçu (null : questions). Cases natives, sans nouveau rendu : la position et le focus restent
+function openGen() {
+  const saved = db.profile || ui.genSaved || {};
+  ui.gen = { equipment: saved.equipment || Object.keys(EQUIPMENT), refused: saved.refused || [], start: !db.profile ? ui.setup.start || nextMonday() : P.generated ? P.start : nextMonday(), res: null };
+}
+
+function viewGen() {
+  const g = ui.gen;
+  if (g.res) return viewGenPreview(g.res);
+  const all = Object.keys(EQUIPMENT), chk = (k, v, label, on) => `<label class="chk"><span>${esc(label)}</span><input type="checkbox" data-g="${k}" value="${v}" ${on ? 'checked' : ''}></label>`;
+  let h = `<div class="gen"><h1 tabindex="-1">${db.profile ? 'Créer un programme' : 'Adapter le programme'}</h1><div class="mut">Upper/Lower : 4 séances par semaine, 24 semaines, prise de muscle.</div>`;
+  h += `<h2>Mon matériel</h2><div class="card" role="group" aria-label="Mon matériel">${chk('all', '', 'Salle complète (tout)', g.equipment.length === all.length)}${all.map(k => chk('eq', k, EQUIPMENT[k], g.equipment.includes(k))).join('')}</div>`;
+  h += `<h2>Exercices refusés</h2><div class="card"><div class="mut" style="margin-bottom:8px">Facultatif. Coche ceux que tu ne veux pas faire.</div>`;
+  for (const m of Object.keys(MUSCLES)) {
+    const list = CATALOGUE.filter(e => mainMuscle(e) === m), n = list.filter(e => g.refused.includes(e.id)).length;
+    if (list.length) h += `<details><summary><span>${esc(MUSCLES[m])}</span><span class="mut" data-gn="${m}">${n ? n + ' refusé' + (n > 1 ? 's' : '') : ''}</span></summary>${list.map(e => chk('ref', e.id, e.n, g.refused.includes(e.id))).join('')}</details>`;
+  }
+  h += `</div>`;
+  if (db.profile) h += `<label class="mut" style="display:block">Date de début<input type="date" data-gs value="${esc(g.start)}" style="min-height:44px"></label>`;
+  return h + `<div class="err" role="alert" id="err-gen">${esc(ui.err.gen || '')}</div><button class="primary" style="width:100%;margin-top:10px" data-a="gen-preview">Voir le programme</button><button class="ghost" style="width:100%;margin-top:8px" data-a="gen-close">Annuler</button></div>`;
+}
+
+function viewGenPreview({ program, low }) {
+  let h = `<div class="gen"><h1 tabindex="-1">Aperçu</h1><div class="mut" style="margin-bottom:12px">${esc(program.name)} · début le ${esc(frDate(program.start))}. Reps du premier bloc.</div>`;
+  if (low.length) h += `<div class="banner mid" role="status">${low.map(x => x.v ? `${esc(MUSCLES[x.m])} : ${fmt(x.v)} séries par semaine au lieu de ${fmt(x.base)}.` : `${esc(MUSCLES[x.m])} : aucun exercice possible avec tes réponses.`).join('<br>')}</div>`;
+  for (const s of program.sessions) h += `<h2>${esc(s.name)}</h2><div class="card">${s.ex.map(e => `<div class="row" style="padding:5px 0"><span>${esc(e.n)}</span><span class="mut" style="white-space:nowrap">${e.s} × ${(e.big ? program.mesos[0].bigR : e.r).join('-')}</span></div>`).join('')}</div>`;
+  return h + `<div class="mut" style="margin:12px 0">Ce programme ne remplace pas un avis médical. En cas de douleur ou de doute, demande à un professionnel de santé.</div><button class="primary" style="width:100%" data-a="gen-accept">Accepter ce programme</button><button style="width:100%;margin-top:8px" data-a="gen-edit">Modifier mes réponses</button><button class="ghost" style="width:100%;margin-top:8px" data-a="gen-close">Annuler</button></div>`;
+}
+
+// Change d'étape : haut de page et focus sur le titre
+function showGen() { render(); window.scrollTo(0, 0); $('#view h1').focus(); }
 
 // Premier lancement : création du profil
 function viewSetup() {
@@ -441,6 +478,7 @@ function draft(k) { return k === 's' ? ui.setup : (ui.profDraft = ui.profDraft |
 // Change de programme. Même date de début = même programme retouché : on reste à la même semaine.
 function useProgram(p) {
   const before = progStart();
+  if (db.profile && db.program) db.prev = { program: db.program, start: db.profile.start };
   db.oldEx = { ...db.oldEx, ...oldExFrom(db.logs, P, p) };
   db.program = p;
   if (db.profile && progStart() !== before) db.profile.start = null;
@@ -451,7 +489,7 @@ function useProgram(p) {
 function showErr(id) { $('#err-' + id).textContent = ui.err[id]; }
 
 function render() {
-  const v = !db.profile ? viewSetup() : { dash: viewDash, work: viewWork, stats: viewStats, prof: viewProf }[ui.tab]();
+  const v = ui.gen ? viewGen() : !db.profile ? viewSetup() : { dash: viewDash, work: viewWork, stats: viewStats, prof: viewProf }[ui.tab]();
   $('#view').innerHTML = v;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === ui.tab));
   document.body.classList.toggle('focus', !db.profile || (ui.tab === 'work' && !!ui.focus));
@@ -462,7 +500,7 @@ document.addEventListener('click', ev => {
   const t = ev.target.closest('[data-tab],[data-a]');
   unlockAudio();
   if (!t) return;
-  if (t.dataset.tab) { ui.profDraft = null; ui.tab = t.dataset.tab; window.scrollTo(0, 0); return render(); }
+  if (t.dataset.tab) { ui.profDraft = null; ui.gen = null; ui.tab = t.dataset.tab; window.scrollTo(0, 0); return render(); }
   const a = t.dataset.a, key = wk();
   if (a === 'oiseau') { const d = db.daily[today()] || (db.daily[today()] = {}); d.oiseau = !d.oiseau; save(); render(); }
   else if (a === 'open-session' || a === 'pick') { ui.sid = t.dataset.sid; ui.open = null; ui.focus = false; ui.tab = 'work'; window.scrollTo(0, 0); render(); }
@@ -532,21 +570,38 @@ document.addEventListener('click', ev => {
   else if (a === 'setup-save') {
     const p = readProfile(ui.setup, 's');
     if (p.error) { ui.err.setup = p.error; return render(); }
-    delete ui.err.setup; db.profile = { ...p, trackedZones: [] }; db.program = db.program || defaultCopy(); ui.setup = {}; ui.progErr = []; ui.progOk = ''; save(); applyProgram(); ui.tab = 'dash'; render();
+    delete ui.err.setup; db.profile = { ...p, trackedZones: [], ...ui.genSaved }; db.program = db.program || neutralProgram(); ui.setup = {}; ui.genSaved = null; ui.progErr = []; ui.progOk = ''; save(); applyProgram(); ui.tab = 'dash'; render();
   }
   else if (a === 'prof-save') {
     const p = readProfile(ui.profDraft || db.profile, 'p');
     if (p.error) { ui.err.prof = p.error; return render(); }
-    delete ui.err.prof; db.profile = { ...p, trackedZones: db.profile.trackedZones }; ui.profDraft = null; save(); applyProgram(); render();
+    delete ui.err.prof; db.profile = { ...db.profile, ...p }; ui.profDraft = null; save(); applyProgram(); render();
   }
-  else if (a === 'prog-export') downloadJson(db.program || DEFAULT_PROGRAM, 'programme-modele.json');
+  else if (a === 'prog-export') downloadJson(baseProgram(), 'programme-modele.json');
   else if (a === 'prog-import') $('#progFile').click();
-  else if (a === 'prog-default' && confirm('Revenir au programme par défaut ? Tes séances enregistrées sont conservées.')) {
-    useProgram(defaultCopy()); ui.progOk = `Programme par défaut rétabli · semaine ${week()}.`; ui.progErr = []; render();
+  else if (a === 'prog-prev' && confirm(`Revenir au programme « ${db.prev.program.name} » ? Tes séances enregistrées sont conservées.`)) {
+    const { program, start } = db.prev;
+    useProgram(program); db.profile.start = start; save(); applyProgram();
+    ui.progOk = `Programme « ${P.name} » repris · semaine ${week()}.`; ui.progErr = []; render();
+  }
+  else if (a === 'gen-open') { openGen(); delete ui.err.gen; showGen(); }
+  else if (a === 'gen-close') { ui.gen = null; render(); window.scrollTo(0, 0); }
+  else if (a === 'gen-edit') { ui.gen.res = null; showGen(); }
+  else if (a === 'gen-preview') {
+    const g = ui.gen, res = g.start ? generateProgram(g, LIBRARY) : null;
+    ui.err.gen = !res ? 'Choisis une date de début.' : !res.program ? 'Aucun exercice possible : coche plus de matériel ou refuse moins d\'exercices.' : '';
+    if (ui.err.gen) return showErr('gen');
+    g.res = res; showGen();
+  }
+  else if (a === 'gen-accept' && (!db.profile || confirm(`Remplacer ton programme « ${P.name} » ? Tes séances enregistrées sont conservées, et tu pourras revenir à ce programme.`))) {
+    const { res, equipment, refused } = ui.gen;
+    useProgram(res.program); ui.gen = null;
+    if (db.profile) { Object.assign(db.profile, { start: null, equipment, refused }); save(); applyProgram(); } else ui.genSaved = { equipment, refused };
+    ui.progOk = `Programme « ${P.name} » créé · début le ${frDate(P.start)}${db.profile ? `, semaine ${week()}` : ''}.`; ui.progErr = []; render(); window.scrollTo(0, 0);
   }
   else if (a === 'export') downloadJson(db, `muscu-${today()}.json`);
   else if (a === 'import-btn') $('#importFile').click();
-  else if (a === 'reset' && confirm('Effacer ton profil, ton programme importé, tes séances, bilans et mesures ? Cette action est définitive. Exporte d\'abord si besoin.')) { db = blank(); save(); applyProgram(); ui.tab = 'dash'; ui.sid = null; ui.focus = false; ui.setup = {}; ui.profDraft = null; ui.zone = { label: '', tags: [] }; render(); }
+  else if (a === 'reset' && confirm('Effacer ton profil, tes programmes, tes séances, bilans et mesures ? Cette action est définitive. Exporte d\'abord si besoin.')) { db = blank(); save(); applyProgram(); ui.tab = 'dash'; ui.sid = null; ui.focus = false; ui.setup = {}; ui.genSaved = null; ui.progOk = ''; ui.profDraft = null; ui.zone = { label: '', tags: [] }; render(); }
 });
 
 document.addEventListener('input', ev => {
@@ -566,6 +621,17 @@ document.addEventListener('input', ev => {
 
 document.addEventListener('change', ev => {
   const i = ev.target;
+  if ('gs' in i.dataset) ui.gen.start = i.value;
+  if (i.dataset.g) {
+    const g = ui.gen, put = (list, v) => i.checked ? [...list, v] : list.filter(x => x !== v), box = k => [...document.querySelectorAll(`[data-g=${k}]`)];
+    if (i.dataset.g === 'all') { g.equipment = i.checked ? Object.keys(EQUIPMENT) : []; box('eq').forEach(b => { b.checked = i.checked; }); }
+    else if (i.dataset.g === 'eq') { g.equipment = put(g.equipment, i.value); box('all')[0].checked = g.equipment.length === Object.keys(EQUIPMENT).length; }
+    else {
+      g.refused = put(g.refused, i.value);
+      const d = i.closest('details'), n = d.querySelectorAll('input:checked').length;
+      d.querySelector('[data-gn]').textContent = n ? n + ' refusé' + (n > 1 ? 's' : '') : '';
+    }
+  }
   if (i.dataset.in === 'chart') { ui.chartEx = i.value; render(); }
   if (i.id === 'importFile' && i.files[0]) {
     i.files[0].text().then(txt => {

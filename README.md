@@ -1,6 +1,6 @@
 # Suivi muscu
 
-Application web installable (PWA) pour suivre un programme de musculation de 31 semaines : séances avec chrono de repos, progression, bilan de fatigue, mensurations et carte musculaire.
+Application web installable (PWA) pour suivre un programme de musculation, créé dans l'application selon le matériel ou importé : séances avec chrono de repos, progression, bilan de fatigue, mensurations et carte musculaire.
 
 Chaque utilisateur crée son profil (prénom, sexe, taille, date de début) au premier lancement. Les données restent sur son téléphone (localStorage) : penser à exporter régulièrement depuis l'onglet Profile.
 

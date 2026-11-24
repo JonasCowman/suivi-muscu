@@ -27,6 +27,7 @@ Un programme est un fichier JSON. Le plus simple : dans l'appli, onglet **Profil
 | `weeks` | oui | Nombre de semaines (1 à 104) |
 | `daily` | non | Tâche quotidienne cochable sur le Dashboard (supprime le champ si inutile) |
 | `keyLifts` | non | Identifiants des exercices suivis dans « Objectifs de charge » |
+| `rirLight` | non | RIR affiché les semaines allégées (texte, par défaut `"3-4"`) |
 | `rirWeeks` | non | RIR imposé aux polyarticulaires certaines semaines (ex. `"1": "3"` en semaine 1, même écriture que `rirBig`) |
 
 ## Mésocycles (`mesos`)

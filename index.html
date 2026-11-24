@@ -73,6 +73,14 @@ input:focus{outline:none;border-color:var(--cyan)}
 input[type=range]{width:100%;accent-color:var(--cyan)}
 label.chk{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 label.chk input{width:22px;height:22px;accent-color:var(--cyan)}
+.gen label.chk,.gen summary{min-height:44px;gap:12px}
+.gen summary{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);cursor:pointer}
+.gen summary::before{content:'+';color:var(--cyan);font-size:20px;width:14px}
+.gen details[open] summary::before{content:'–'}
+.gen summary span:first-child{flex:1}
+.gen h1:focus{outline:none}
+.gen button{min-height:44px}
+.gen :focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 .err{color:var(--danger);font-size:13px;margin-top:6px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .metric{background:var(--card2);border-radius:10px;padding:10px}
@@ -111,6 +119,7 @@ nav svg{width:22px;height:22px}
 </nav>
 <script src="logic.js"></script>
 <script src="programme-defaut.js"></script>
+<script src="catalogue.js"></script>
 <script src="body-data.js"></script>
 <script src="body.js"></script>
 <script src="app.js"></script>

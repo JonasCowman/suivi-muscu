@@ -426,6 +426,15 @@ L.setProgram(DEF);
 assert.strictEqual(L.zoneMuscle(TRAP, L.plannedWeekly()), 'dos', 'programme sans trapèzes : zone colorée avec le dos, comme avant');
 assert.strictEqual(L.zoneMuscle(ADD, L.plannedWeekly()), null, 'programme sans adducteurs : zone neutre');
 assert.strictEqual(L.zoneMuscle(['pecs'], {}), 'pecs');
+// Réponses du générateur et programme précédent : facultatifs, contrôlés
+L.setProgram(DEF);
+const mg = x => L.migrate({ v: 2, logs: {}, profile: { ...prof, ...x.profile }, program: mini, ...x.root }, DEF);
+assert.deepStrictEqual(mg({ profile: { equipment: ['halteres', '<b>', 3, 'halteres'], refused: ['hack'] } }).profile, { ...prof, trackedZones: [], equipment: ['halteres'], refused: ['hack'] });
+for (const v of [undefined, null, 'x', {}]) assert.ok(!('equipment' in mg({ profile: { equipment: v } }).profile), 'ancien profil inchangé');
+assert.deepStrictEqual(mg({ root: { prev: { program: DEF, start: '2026-11-23' } } }).prev, { program: DEF, start: '2026-11-23' });
+assert.deepStrictEqual(mg({ root: { prev: { program: DEF, start: '<b>' } } }).prev, { program: DEF, start: null });
+for (const prev of [undefined, null, 5, {}, { program: { format: 'x' } }]) assert.strictEqual(mg({ root: { prev } }).prev, null);
+
 // Catalogue : identifiants, muscles, tags et remplaçants valides ; les exercices du programme de 31 semaines gardent leur identifiant
 const LIB = require('./catalogue.js'), cat = Object.fromEntries(LIB.CATALOGUE.map(e => [e.id, e]));
 assert.strictEqual(Object.keys(cat).length, LIB.CATALOGUE.length, 'identifiant en double');

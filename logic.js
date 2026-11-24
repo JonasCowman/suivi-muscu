@@ -447,6 +447,9 @@ function cleanZones(v) {
   return out;
 }
 
+// Liste d'identifiants (matériel, exercices refusés)
+const cleanIds = v => [...new Set(v.filter(isId))];
+
 // Exercices sortis du programme : { id: { n, muscles } }
 function cleanOldEx(v) {
   const out = {};
@@ -477,6 +480,7 @@ function migrate(d, defaultProgram, today) {
   let profile = null;
   if (isObj(d.profile)) {
     profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null, trackedZones: cleanZones(d.profile.trackedZones) };
+    for (const k of ['equipment', 'refused']) if (Array.isArray(d.profile[k])) profile[k] = cleanIds(d.profile[k]);
   } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null, trackedZones: [] };
   // Profil sans programme enregistré : copie figée, pour qu'un futur programme par défaut ne remplace jamais le sien
   if (profile && !d.program) program = JSON.parse(JSON.stringify(defaultProgram));
@@ -513,7 +517,9 @@ function migrate(d, defaultProgram, today) {
     return out;
   }).filter(m => Object.keys(m).length > 1);
   const oldEx = { ...oldExFrom(logs, defaultProgram, program || defaultProgram), ...cleanOldEx(d.oldEx) };
-  return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx };
+  // Programme remplacé, avec la date de début qui était choisie dans le profil
+  const prev = isObj(d.prev) && !validateProgram(d.prev.program).length ? { program: d.prev.program, start: isDate(d.prev.start) ? d.prev.start : null } : null;
+  return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx, prev };
 }
 
 if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, generateProgram, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
