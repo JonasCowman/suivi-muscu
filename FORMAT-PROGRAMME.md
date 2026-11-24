@@ -79,4 +79,4 @@ Ils doivent couvrir toutes les semaines, de 1 à `weeks`, sans trou ni chevauche
 | `joints` | Articulations sollicitées (facultatif) : `epaules`, `coudes`, `poignets`, `lombaires`, `hanches`, `genoux`, `chevilles` |
 | `patterns` | Mouvements (facultatif) : `poussee`, `tirage`, `quads`, `ischios`. Sans `joints` ni `patterns`, le mode protection ne s'applique jamais à l'exercice |
 
-Muscles possibles : `pecs`, `epaules_lat`, `epaules_post`, `dos`, `biceps`, `triceps`, `avantbras`, `abdos`, `quadriceps`, `ischios`, `fessiers`, `mollets`.
+Muscles possibles : `pecs`, `epaules_avant`, `epaules_lat`, `epaules_post`, `dos`, `trapezes`, `lombaires`, `biceps`, `triceps`, `avantbras`, `abdos`, `quadriceps`, `ischios`, `adducteurs`, `fessiers`, `mollets`.

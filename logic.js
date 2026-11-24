@@ -1,8 +1,8 @@
 // Logique du programme. Le programme actif (par défaut ou importé) est chargé avec setProgram().
 const MUSCLES = {
-  pecs: 'Pectoraux', epaules_lat: 'Deltoïdes latéraux', epaules_post: 'Deltoïdes postérieurs', dos: 'Dos',
+  pecs: 'Pectoraux', epaules_avant: 'Deltoïdes antérieurs', epaules_lat: 'Deltoïdes latéraux', epaules_post: 'Deltoïdes postérieurs', dos: 'Dos', trapezes: 'Trapèzes', lombaires: 'Lombaires',
   biceps: 'Biceps', triceps: 'Triceps', avantbras: 'Avant-bras', abdos: 'Abdominaux',
-  quadriceps: 'Quadriceps', ischios: 'Ischios', fessiers: 'Fessiers', mollets: 'Mollets',
+  quadriceps: 'Quadriceps', ischios: 'Ischios', adducteurs: 'Adducteurs', fessiers: 'Fessiers', mollets: 'Mollets',
 };
 
 // Tags universels des exercices, pour relier les zones suivies aux exercices
@@ -128,6 +128,9 @@ function weekOf(d, shifts = []) {
   const from = mondayOf(P.start), m = mondayOf(d);
   return Math.max(1, Math.min(P.weeks, weekIndex(d) - shifts.filter(s => s >= from && s <= m).length));
 }
+
+// Zone du dessin : muscles possibles par priorité. Le premier visé par le programme, sinon le dernier (null = zone neutre)
+function zoneMuscle(list, plan) { return list.find(m => plan[m]) ?? list[list.length - 1]; }
 
 // Semaines comptées par une période de la carte : la saison part du début du programme, les mois de la première séance si elle est plus ancienne
 function periodWeeks(period, logs, cur) {
@@ -445,4 +448,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };

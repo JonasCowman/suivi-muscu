@@ -412,5 +412,18 @@ assert.strictEqual(L.periodWeeks(4, {}, '2027-01-11'), 2, 'sans séance : depuis
 assert.strictEqual(L.periodWeeks(4, wkLog('2027-01-11'), '2027-01-18'), 3, 'première séance après le début du programme : inchangé');
 assert.strictEqual(L.periodWeeks(4, { '2026-11-23|s1': { ex: { a: [{ kg: 1 }] } } }, '2027-01-04'), 1, 'séance ouverte sans série faite : ignorée');
 assert.strictEqual(L.periodWeeks('all', {}, '2026-12-21'), 1, 'programme pas encore commencé');
+
+// Trapèzes, lombaires, adducteurs, deltoïde avant : acceptés, et montrés seulement si le programme les vise
+const four = clone(mini);
+four.sessions[0].ex.push({ id: 'shrug', n: 'Shrug', s: 2, r: [10, 12], rest: 90, iso: true, muscles: { trapezes: 1, lombaires: 0.5, adducteurs: 0.5, epaules_avant: 0.5 } });
+assert.deepStrictEqual(L.validateProgram(four), []);
+L.setProgram(four);
+assert.strictEqual(L.plannedWeekly().trapezes, 2);
+const TRAP = ['trapezes', 'dos'], ADD = ['adducteurs', null];
+assert.strictEqual(L.zoneMuscle(TRAP, L.plannedWeekly()), 'trapezes');
+assert.strictEqual(L.zoneMuscle(ADD, L.plannedWeekly()), 'adducteurs');
 L.setProgram(DEF);
+assert.strictEqual(L.zoneMuscle(TRAP, L.plannedWeekly()), 'dos', 'programme sans trapèzes : zone colorée avec le dos, comme avant');
+assert.strictEqual(L.zoneMuscle(ADD, L.plannedWeekly()), null, 'programme sans adducteurs : zone neutre');
+assert.strictEqual(L.zoneMuscle(['pecs'], {}), 'pecs');
 console.log('logic ok');
