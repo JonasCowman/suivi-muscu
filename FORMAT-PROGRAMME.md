@@ -69,6 +69,7 @@ Ils doivent couvrir toutes les semaines, de 1 à `weeks`, sans trou ni chevauche
 | `rest` | Repos en secondes |
 | `big` | Gros mouvement : sa fourchette suit `bigR` du mésocycle |
 | `iso` | Isolation : RIR `rirIso` (sinon `rirBig`) |
+| `cat` | `"postural"` : protocole postural, sans série d'échauffement (W). Champ facultatif. Sinon : 3 séries W si `big`, 1 si `iso` (0 si le muscle a déjà travaillé dans la séance), 2 pour les autres |
 | `noFail` | Jamais à l'échec (RIR 2-3) |
 | `bonus` | Nombre de séries retirées si le bilan fatigue compte 2 signaux |
 | `inc` | Hausse de charge en kg quand le haut de la fourchette est atteint (par défaut 1 en isolation, 2.5 sinon) |

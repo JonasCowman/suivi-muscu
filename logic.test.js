@@ -116,6 +116,7 @@ bad(p => { p.sessions[0].ex[1].id = p.sessions[0].ex[0].id; }, 'en double');
 bad(p => { p.sessions[0].ex[0].inc = -1; }, '"inc"');
 bad(p => { p.rirWeeks = { 1: 3 }; }, '"rirWeeks"');
 bad(p => { p.daily = { n: 'x', detail: 3 }; }, '"daily"');
+bad(p => { p.sessions[0].ex[0].cat = 'x'; }, '"cat"');
 for (const v of [0, 'x', [], {}, { sessions: {}, mesos: {}, keyLifts: {} }, { sessions: [1], mesos: [2] }]) assert.ok(L.validateProgram(v).length, 'doit être refusé sans planter');
 
 // Migration des données de la version en ligne (clés « semaine|séance »)
@@ -140,6 +141,11 @@ for (const v of [0, 3, 5]) assert.ok(L.isRir(v));
 for (const v of [-1, 6, 1.5, '2', null, undefined, NaN]) assert.ok(!L.isRir(v));
 const rirs = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: { a: [{ kg: 1, reps: 1, rir: 0, done: true }, { kg: 2, reps: 1, rir: '<b>', done: true }, { kg: 3, reps: 1, done: true }] } } } }, DEF);
 assert.deepStrictEqual(rirs.logs['2026-11-23|lundi'].ex.a, [{ kg: 1, reps: 1, rir: 0, done: true }, { kg: 2, reps: 1, done: true }, { kg: 3, reps: 1, done: true }]);
+// Séries W cochées : rangées à part des vraies séries, valeurs fausses retirées
+const wm = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: {}, warm: { decline: [true, 'x', null, true], '<b>': [true], hack: 5 } }, '2026-11-24|mardi': { ex: {}, warm: 3 } } }, DEF);
+assert.deepStrictEqual(wm.logs['2026-11-23|lundi'].warm, { decline: [true, false, false] });
+assert.deepStrictEqual(wm.logs['2026-11-23|mardi'].warm, {});
+assert.ok(!('warm' in mig.logs['2026-11-23|lundi']), 'ancienne séance inchangée');
 // Deux anciennes semaines tombant la même semaine réelle : aucune donnée perdue
 const coll = L.migrate({ logs: { '1|lundi': { start: Date.parse('2026-11-30T18:00:00'), ex: { a: [{ kg: 1, reps: 1, done: true }] } }, '2|lundi': { start: Date.parse('2026-12-01T18:00:00'), ex: { a: [{ kg: 2, reps: 1, done: true }] } } } }, DEF);
 assert.deepStrictEqual(Object.values(coll.logs).map(l => l.ex.a[0].kg).sort(), [1, 2]);
@@ -147,6 +153,28 @@ assert.strictEqual(L.migrate({ logs: {}, fatigue: {}, shift: 1, height: 183 }, D
 assert.strictEqual(L.migrate({ logs: {}, shift: -1, height: 183 }, DEF, '2026-12-14').profile.start, '2026-11-16');
 for (const v of [null, 5, [], { logs: null }, { logs: [] }, { logs: 'x' }]) assert.strictEqual(L.migrate(v, DEF), null);
 assert.strictEqual(L.migrate({ logs: {}, program: { format: 'x' } }, DEF).program, null);
+
+// Séries d'échauffement W (PRD) : nombre par exercice dans l'ordre de la séance
+const wCount = sid => { const l = DEF.sessions.find(s => s.id === sid).ex; return l.map((e, i) => e.id + ':' + L.warmupFor(l, i).length).join(' '); };
+assert.strictEqual(wCount('lundi'), 'oiseau:0 pecfly:1 decline:3 chestpress:2 ecarte:0 tirageneutre:2 latpoulie:1 triceps:0');
+assert.strictEqual(wCount('mardi'), 'oiseau:0 legcurlallonge:1 legext:1 hack:3 presse:2 legcurlassis:0 mollets:1 crunch:1');
+assert.strictEqual(wCount('jeudi'), 'oiseau:0 pullover:1 tractions:2 tirage45:2 pecfly:1 declinehalteres:2 lathalteres:1 marteau:0');
+assert.strictEqual(wCount('vendredi'), 'oiseau:0 sdjt:3 legcurldebout:0 hipthrust:2 split:2 latpoulie:1 curlpoulie:1');
+const lundi = DEF.sessions[0].ex;
+assert.deepStrictEqual(L.warmupFor(lundi, 1), [{ reps: '10-12', pct: 0.5, rest: 45 }]);
+assert.deepStrictEqual(L.warmupFor(lundi, 2), [{ reps: '10', pct: 0.4, rest: 45 }, { reps: '6', pct: 0.65, rest: 60 }, { reps: '3', pct: 0.85, rest: 120 }]);
+assert.deepStrictEqual(L.warmupFor(lundi, 3), [{ reps: '10', pct: 0.5, rest: 45 }, { reps: '5', pct: 0.75, rest: 60 }]);
+const iso = muscles => ({ iso: true, muscles });
+assert.strictEqual(L.warmupFor([iso({ dos: 1 }), iso({ dos: 1, biceps: 1 })], 1).length, 1, 'chaud seulement si tous les muscles principaux le sont');
+// Repos entre séries W : barème de l'utilisateur, bornes comprises
+assert.deepStrictEqual([0.55, 0.56, 0.75, 0.76].map(p => L.warmRest(p, false)), [45, 60, 60, 90]);
+assert.strictEqual(L.warmRest(0.85, true), 120);
+// Charge W : arrondie au palier de l'exercice ; null si elle n'a pas de sens
+assert.strictEqual(L.warmKg(62.5, 0.65, 2.5), 40);
+assert.strictEqual(L.warmKg(62.5, 0.5, 2.5), 32.5, 'mi-palier arrondi vers le haut');
+assert.strictEqual(L.warmKg(9, 0.5, 2), 4);
+for (const kg of [null, undefined, 0, NaN, -5]) assert.strictEqual(L.warmKg(kg, 0.5, 2.5), null);
+assert.strictEqual(L.warmKg(2, 0.5, 2.5), null, 'arrondi à 0');
 
 // Petit programme valide
 const mini = { format: 'suivi-muscu-programme', version: 1, name: 'Test', start: '2027-01-04', weeks: 4, keyLifts: [], mesos: [{ id: 'A', name: 'Bloc', from: 1, to: 4, bigR: [8, 12], rirBig: '2', rirIso: '1' }], sessions: [{ id: 's1', name: 'Full body', ex: [{ id: 'squat', n: 'Squat', s: 3, r: [8, 12], rest: 120, big: true, muscles: { quadriceps: 1 } }] }] };

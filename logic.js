@@ -54,6 +54,7 @@ function validateProgram(p) {
         if (!isRange(e.r)) err.push(`${w} : "r" = fourchette de reps [min, max].`);
         if (!isInt(e.rest, 10, 600)) err.push(`${w} : "rest" = repos en secondes (10 à 600).`);
         if (e.bonus !== undefined && !isInt(e.bonus, 1, (e.s || 1))) err.push(`${w} : "bonus" doit être inférieur ou égal à "s".`);
+        if (e.cat !== undefined && e.cat !== 'postural') err.push(`${w} : "cat" = "postural" ou supprime le champ.`);
         if (e.inc !== undefined && !(typeof e.inc === 'number' && e.inc > 0 && e.inc <= 20)) err.push(`${w} : "inc" = hausse de charge en kg (plus de 0, 20 maximum).`);
         if (!isObj(e.muscles) || !Object.keys(e.muscles).length) err.push(`${w} : "muscles" manquant.`);
         else for (const [m, k] of Object.entries(e.muscles)) {
@@ -169,6 +170,29 @@ function progressionHint(sets, { range, need, inc, light }) {
   return { kg, text: `Même charge (${load}), +1 rep sur une série.` };
 }
 
+// Repos après une série W, selon le pourcentage de la charge de travail (barème fourni par l'utilisateur)
+function warmRest(pct, heavy) { return pct <= 0.55 ? 45 : pct <= 0.75 ? 60 : heavy ? 120 : 90; }
+
+// Séries d'échauffement W (PRD) de l'exercice idx. list = exercices de la séance, dans l'ordre
+const WARM_HEAVY = [['10', 0.4], ['6', 0.65], ['3', 0.85]], WARM_SECOND = [['10', 0.5], ['5', 0.75]], WARM_ISO = [['10-12', 0.5]];
+function warmupFor(list, idx) {
+  const e = list[idx];
+  if (e.cat === 'postural') return [];
+  let sets = e.big ? WARM_HEAVY : WARM_SECOND;
+  if (e.iso && !e.big) {
+    // Muscle chaud : déjà travaillé plus tôt dans la séance, en principal ou en secondaire
+    const top = Math.max(...Object.values(e.muscles)), hot = m => list.slice(0, idx).some(x => m in x.muscles);
+    sets = Object.keys(e.muscles).filter(m => e.muscles[m] === top).every(hot) ? [] : WARM_ISO;
+  }
+  return sets.map(([reps, pct]) => ({ reps, pct, rest: warmRest(pct, !!e.big) }));
+}
+
+// Charge d'une série W, au plus proche palier. null : charge inconnue, poids du corps ou arrondi à 0
+function warmKg(kg, pct, inc) {
+  if (!(kg > 0)) return null;
+  return Math.round((Math.round(+(kg * pct / inc).toFixed(6)) * inc) * 100) / 100 || null;
+}
+
 function e1rm(kg, reps) { return kg * (1 + reps / 30); }
 
 // Méthode US Navy. Femme : la formule utilise aussi le tour de hanches.
@@ -188,6 +212,13 @@ const MESURES = ['poids', 'poitrine', 'taille', 'hanches', 'cuisse', 'bras', 'co
 const isRir = v => isInt(v, 0, 5);
 // Garde la série, sans son RIR s'il n'est pas valide
 function cleanSet(s) { if (!isObj(s)) return {}; const { rir, ...rest } = s; return isRir(rir) ? s : rest; }
+
+// Séries W cochées d'une séance : { exercice: [true, false…] }
+function cleanWarm(w) {
+  const out = {};
+  for (const [id, a] of Object.entries(isObj(w) ? w : {})) if (isId(id) && Array.isArray(a)) out[id] = Array.from(a.slice(0, 3), v => v === true);
+  return out;
+}
 
 // Met des données enregistrées (ou une sauvegarde) au format actuel sans perdre de séance. null si ce n'est pas une sauvegarde.
 // v1 : séances rangées par numéro de semaine ("3|lundi"), mélangées après un décalage. v2 : par lundi ("2026-12-07|lundi").
@@ -218,7 +249,7 @@ function migrate(d, defaultProgram, today) {
       key = mondayOf(log.start > 0 ? new Date(log.start).toLocaleDateString('sv-SE') : isDate(log.date) ? log.date : weekKey(+w));
       while (logs[key + '|' + sid]) key = addDays(key, -7);
     }
-    logs[key + '|' + sid] = { ...log, ex };
+    logs[key + '|' + sid] = { ...log, ex, ...('warm' in log && { warm: cleanWarm(log.warm) }) };
   }
   const fatigue = {};
   for (const [k, f] of Object.entries(isObj(d.fatigue) ? d.fatigue : {})) {
@@ -234,4 +265,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, e1rm, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };

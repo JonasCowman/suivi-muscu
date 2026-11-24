@@ -150,6 +150,14 @@ function viewFocus() {
   if (e.note) h += `<div class="warnchip">⚠ ${esc(e.note)}</div>`;
   h += `<div><span class="tag c">${n} x ${r[0]}-${r[1]}</span><span class="tag c">RIR visé ${rir}</span>${e.tempo ? `<span class="tag">Tempo ${esc(e.tempo)}</span>` : ''}<span class="tag">Repos ${mmss(e.rest)}</span></div>`;
   h += `<div class="mut" style="margin-top:8px;color:var(--cyan)">${esc(hint.text)}</div>`;
+  const warm = warmupFor(exs, idx), wDone = (log.warm || {})[e.id] || [], wKg = sets[0] && sets[0].kg != null ? sets[0].kg : hint.kg;
+  if (warm.length) {
+    h += `<table class="sets"><caption class="mut">Échauffement</caption><tr><th>Série</th><th>Reps</th><th>Charge</th><th>Repos</th><th></th></tr>`;
+    warm.forEach((x, i) => {
+      h += `<tr><td>W${i + 1}</td><td>${x.reps}</td><td data-wpct="${x.pct}">${warmLoad(e, wKg, x.pct)}</td><td>${mmss(x.rest)}</td><td><button class="check ${wDone[i] ? 'on' : ''}" data-a="warm" data-w="${i}" aria-pressed="${!!wDone[i]}" aria-label="Série d'échauffement ${i + 1} faite">${wDone[i] ? '✓' : ''}</button></td></tr>`;
+    });
+    h += `</table>`;
+  }
   h += `<table class="sets"><tr><th>Série</th><th>Reps</th><th>Charge (kg)</th><th>RIR réel</th><th></th></tr>`;
   for (let i = 0; i < n; i++) {
     const x = sets[i] || {};
@@ -163,6 +171,25 @@ function viewFocus() {
   const last = idx === exs.length - 1;
   h += `<div class="bottom"><button data-a="next-set" style="flex:1">${cur === -1 ? 'Exercice terminé ✓' : 'Terminer la série'}</button><button class="primary" data-a="next-ex" style="flex:1">${last ? 'Terminer la séance' : 'Suivant'}</button></div>`;
   return h;
+}
+
+// Charge d'une série W : kg et pourcentage, ou pourcentage seul si la charge n'est pas connue
+function warmLoad(e, kg, pct) {
+  const v = warmKg(kg, pct, incFor(e)), p = Math.round(pct * 100) + ' %';
+  return v === null ? p : `${String(v).replace('.', ',')} kg <span class="mut">${p}</span>`;
+}
+
+// Les séries W sont rangées dans log.warm, jamais avec les vraies séries : elles ne comptent dans aucune statistique
+function toggleWarm(i) {
+  const { log, exs } = sessionState(), idx = exs.findIndex(e => e.id === ui.open), id = exs[idx].id;
+  const all = log.warm || (log.warm = {}), arr = all[id] || (all[id] = []);
+  while (arr.length <= i) arr.push(false);
+  arr[i] = !arr[i];
+  if (arr[i]) {
+    if (!log.start) log.start = Date.now();
+    startRest(warmupFor(exs, idx)[i].rest);
+  }
+  save(); render();
 }
 
 function toggleSet(exId, i) {
@@ -200,7 +227,9 @@ function tick() {
     $('#bigRing').setAttribute('stroke', over ? '#34d399' : '#22d3ee');
     $('#bigRing').setAttribute('stroke-dashoffset', ui.rest ? (502.7 * (1 - left / ui.rest.total)).toFixed(1) : '0');
   }
-  el.style.display = ui.rest && !big ? 'flex' : 'none';
+  // Petit chrono tant que le grand n'est pas visible (écran plus long avec les séries W)
+  const r = big && big.getBoundingClientRect(), seen = r && r.top >= 0 && r.bottom <= $('.bottom').getBoundingClientRect().top;
+  el.style.display = ui.rest && !seen ? 'flex' : 'none';
   if (ui.rest) {
     $('#restT').textContent = mmss(left);
     $('#ring').setAttribute('stroke-dashoffset', (175.9 * (1 - left / ui.rest.total)).toFixed(1));
@@ -421,6 +450,7 @@ document.addEventListener('click', ev => {
     else { log.done = true; log.date = today(); ui.focus = false; ui.rest = null; save(); }
     window.scrollTo(0, 0); render();
   }
+  else if (a === 'warm') toggleWarm(+t.dataset.w);
   else if (a === 'set') toggleSet(t.dataset.ex, +t.dataset.i);
   else if (a === 'finish') { const l = logFor(key, ui.sid); l.done = !l.done; l.date = today(); save(); render(); }
   else if (a === 'rest-add' && ui.rest) { ui.rest.end += 30000; ui.rest.total += 30; tick(); }
@@ -471,6 +501,10 @@ document.addEventListener('input', ev => {
   if (['kg', 'reps', 'rir'].includes(i.dataset.in)) {
     const log = logFor(wk(), ui.sid), x = setAt(log.ex[i.dataset.ex] || (log.ex[i.dataset.ex] = []), +i.dataset.i);
     x[i.dataset.in] = i.value === '' ? undefined : +i.value; save();
+    if (i.dataset.in === 'kg' && i.dataset.i === '0') {
+      const e = sessionState().exs.find(v => v.id === i.dataset.ex), kg = x.kg ?? hintFor(e, ui.sid).kg;
+      document.querySelectorAll('[data-wpct]').forEach(c => { c.innerHTML = warmLoad(e, kg, +c.dataset.wpct); });
+    }
   } else if (i.dataset.s) draft('s')[i.dataset.s] = i.value;
   else if (i.dataset.p) draft('p')[i.dataset.p] = i.value;
   else if (i.dataset.fat === 'pain') $('#painV').textContent = i.value + ' / 10';

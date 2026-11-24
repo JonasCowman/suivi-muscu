@@ -145,6 +145,7 @@ const DEFAULT_PROGRAM = {
      ],
      "rest": 60,
      "iso": true,
+     "cat": "postural",
      "note": "Avant tout le reste",
      "muscles": {
       "epaules_post": 1
@@ -300,6 +301,7 @@ const DEFAULT_PROGRAM = {
      ],
      "rest": 60,
      "iso": true,
+     "cat": "postural",
      "note": "Protocole quotidien",
      "muscles": {
       "epaules_post": 1
@@ -434,6 +436,7 @@ const DEFAULT_PROGRAM = {
      ],
      "rest": 60,
      "iso": true,
+     "cat": "postural",
      "note": "Obligatoire avant le dos",
      "muscles": {
       "epaules_post": 1
@@ -576,6 +579,7 @@ const DEFAULT_PROGRAM = {
      ],
      "rest": 60,
      "iso": true,
+     "cat": "postural",
      "muscles": {
       "epaules_post": 1
      }
