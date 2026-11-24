@@ -103,6 +103,55 @@ assert.strictEqual(H(R(62.5, 8, 8, 8), { past: [R(62.5, 8, 8, 8)], n: 3 }).text,
 assert.deepStrictEqual(T([R(40, 18, 18)], { range: [20, 30], need: 2 }), [18, 19], 'fourchette relevée');
 assert.strictEqual(H([], { past: [], n: 3 }).target, null);
 
+// Effort d'une séance (méthode de l'utilisateur : moyenne et minimum des écarts RIR noté - RIR visé)
+const E = (rirs, target) => L.effortOf(rirs.map(rir => ({ kg: 60, reps: 8, done: true, ...(rir === 'stop' ? { stop: true } : rir === null ? {} : { rir }) })), target);
+assert.strictEqual(E([3, 2, 1], '2'), 'up', 'cas A');
+assert.strictEqual(E([4, 3, 3], '2'), 'up', 'cas B');
+assert.strictEqual(E([4, 2, 0], '2'), 'hold', 'cas C : minimum -2');
+assert.strictEqual(E([1, 0, 0], '2'), 'hold', 'cas D');
+assert.strictEqual(E([2, 2, 1], '2'), 'soft');
+assert.strictEqual(E([2, 1], '2'), 'soft', 'moyenne -0,5 juste');
+assert.strictEqual(E([2, 1, 1], '2'), 'hold', 'moyenne -0,67');
+assert.strictEqual(E([2, 2, 2, 2, 1, 1, 1, 1, 1], '2'), 'hold', 'moyenne -0,56');
+assert.strictEqual(E([5, 5, 1], '2'), 'up', 'minimum -1 accepté');
+assert.strictEqual(E([2, 1, 1], '1-2'), 'up', 'dans la fourchette');
+assert.strictEqual(E([2, 1, 0], '1-2'), 'soft');
+assert.strictEqual(E([0, 0, 0], '1-2'), 'hold');
+assert.strictEqual(E([0, 0, 0], '0-1'), 'up');
+assert.strictEqual(E([5, 0], '2'), 'hold', '« 5+ » compte 5, mais le minimum -2 bloque');
+assert.strictEqual(E([2, null, 1], '2'), 'soft', 'RIR partiel');
+assert.strictEqual(E([2, 'stop', 2], '2'), 'up', 'série arrêtée ignorée');
+assert.strictEqual(E([], '2'), null);
+assert.strictEqual(E([null, 'stop'], '2'), null);
+for (const t of ['échec', '', '3 ou 4', undefined]) assert.strictEqual(E([0, 0, 0], t), null, 'RIR visé illisible : ignoré');
+
+// Effort et objectif
+const X = (past, efforts, o) => H(past[past.length - 1], { past, efforts, n: past[past.length - 1].length, ...o });
+const full = R(60, 12, 12, 12);
+assert.strictEqual(X([full], ['up']).kg, 62.5);
+assert.strictEqual(X([full], [null]).kg, 62.5, 'aucun RIR : comme avant');
+for (const ef of ['soft', 'hold']) assert.deepStrictEqual([X([full], [ef]).kg, X([full], [ef]).target], [60, [12, 12, 12]]);
+assert.deepStrictEqual(X([R(60, 8, 8, 8)], ['up']).target, [8, 8, 9]);
+assert.deepStrictEqual(X([R(60, 8, 8, 8)], ['soft']).target, [8, 8, 9]);
+assert.deepStrictEqual(X([R(60, 8, 8, 8)], ['hold']).target, [8, 8, 8], 'première séance : total fait, sans +1');
+assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 9)], ['up', 'hold']).target, [8, 8, 9], 'même objectif que la séance');
+assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 8)], ['hold', 'hold']).target, [8, 8, 8], 'objectif de la 2e séance : 24, pas 25');
+assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 7)], ['hold', 'up']).target, [8, 8, 8], 'objectif maintenu puis raté : inchangé');
+assert.deepStrictEqual(X([R(60, 8, 8, 8), R(60, 8, 8, 8)], ['hold', 'up']).target, [8, 8, 9], 'objectif maintenu puis atteint');
+assert.deepStrictEqual(X([R(60, 8, 8, 8), R(62.5, 8, 8, 8)], ['up', 'hold']).target, [8, 8, 8], 'nouvelle charge : le calcul repart');
+assert.ok(X([R(60, 8, 8, 8)], ['hold']).text.startsWith('Consolidation'));
+assert.strictEqual(H(R(60, 8, 8), { past: [R(60, 8, 8)], efforts: ['hold'], n: 3 }).text, 'Même charge (60 kg), mêmes reps : effort au-dessus de la cible.');
+assert.strictEqual(X([R(60, 8, 8, 8)], ['hold'], { light: true }).target, null);
+// Série arrêtée : la séance ne compte pas ; seule au dossier, elle ne donne ni hausse ni objectif
+const stopped = full.map((s, i) => (i === 2 ? { ...s, stop: true } : s));
+const only = X([stopped], [null]);
+assert.deepStrictEqual([only.kg, only.target, only.text], [60, null, 'Même charge (60 kg), mêmes reps.']);
+const slogs = { '2026-11-09|lundi': { ex: { x: R(60, 8, 8, 8) } }, '2026-11-16|lundi': { ex: { x: stopped } } };
+assert.deepStrictEqual(L.pastTimes(slogs, { id: 'x' }, 'lundi', '2026-11-23', 9).map(t => t.key), ['2026-11-09']);
+assert.strictEqual(L.pastTimes({ '2026-11-16|lundi': slogs['2026-11-16|lundi'] }, { id: 'x' }, 'lundi', '2026-11-23', 9).length, 1);
+// RIR visé de la séance jugée : semaine 1 (RIR 3) et semaine 2 (RIR 2) ne donnent pas la même classe
+assert.deepStrictEqual([1, 2].map(w => E([2, 2, 2], L.rirFor(w, ex('decline')))), ['hold', 'up']);
+
 // Séance comparée : la même la semaine d'avant ; protocole postural : celle juste avant, même semaine comprise
 const at = (start, reps, o) => ({ start, ex: { x: R(5, reps) }, ...o });
 const plogs = { '2026-11-16|lundi': at(1, 20), '2026-11-16|vendredi': at(2, 21), '2026-11-23|lundi': at(3, 22), '2026-11-23|mardi': at(5, 23, { ex: { x: [{ kg: 5, reps: 9 }] } }), '2026-11-09|vendredi': at(0, 30, { light: true }) };
@@ -181,6 +230,8 @@ for (const v of [0, 3, 5]) assert.ok(L.isRir(v));
 for (const v of [-1, 6, 1.5, '2', null, undefined, NaN]) assert.ok(!L.isRir(v));
 const rirs = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: { a: [{ kg: 1, reps: 1, rir: 0, done: true }, { kg: 2, reps: 1, rir: '<b>', done: true }, { kg: 3, reps: 1, done: true }] } } } }, DEF);
 assert.deepStrictEqual(rirs.logs['2026-11-23|lundi'].ex.a, [{ kg: 1, reps: 1, rir: 0, done: true }, { kg: 2, reps: 1, done: true }, { kg: 3, reps: 1, done: true }]);
+const stops = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: { a: [{ kg: 1, reps: 1, stop: true, rir: 2 }, { kg: 2, reps: 1, stop: 'oui', rir: 1 }, { kg: 3, reps: 1, stop: false }] } } } }, DEF);
+assert.deepStrictEqual(stops.logs['2026-11-23|lundi'].ex.a, [{ kg: 1, reps: 1, stop: true }, { kg: 2, reps: 1, rir: 1 }, { kg: 3, reps: 1 }]);
 // Séries W cochées : rangées à part des vraies séries, valeurs fausses retirées
 const wm = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: {}, warm: { decline: [true, 'x', null, true], '<b>': [true], hack: 5 } }, '2026-11-24|mardi': { ex: {}, warm: 3 } } }, DEF);
 assert.deepStrictEqual(wm.logs['2026-11-23|lundi'].warm, { decline: [true, false, false] });

@@ -43,7 +43,7 @@ function logFor(key, sid) {
 
 function hintFor(e, sid) {
   const key = wk(), past = pastTimes(db.logs, e, sid, key, Date.now()), last = past[past.length - 1];
-  return progressionHint(last && last.sets, { range: rangeFor(week(), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key), past: past.map(t => t.sets), n: plannedSets(key, e) });
+  return progressionHint(last && last.sets, { range: rangeFor(week(), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key), past: past.map(t => t.sets), efforts: past.map(t => effortOf(t.sets, rirFor(progWeek(t.key), e, prevFatigue(t.key)))), n: plannedSets(key, e) });
 }
 
 function bestByWeek(exId) {
@@ -157,7 +157,7 @@ function viewFocus() {
   for (let i = 0; i < n; i++) {
     const x = sets[i] || {};
     const kg = x.kg ?? sets.slice(0, i).reverse().find(p => p && p.kg != null)?.kg ?? hint.kg ?? '';
-    h += `<tr class="${i === cur ? 'cur' : ''}"><td>${i + 1}</td><td><input type="number" inputmode="numeric" min="0" placeholder="${hint.target ? hint.target[i] : r[0] + '-' + r[1]}" value="${esc(x.reps ?? '')}" data-in="reps" data-ex="${e.id}" data-i="${i}" aria-label="Reps, série ${i + 1}"></td><td><input type="number" inputmode="decimal" step="0.5" min="0" value="${esc(kg)}" data-in="kg" data-ex="${e.id}" data-i="${i}" aria-label="Charge en kg, série ${i + 1}"></td><td><select data-in="rir" data-ex="${e.id}" data-i="${i}" aria-label="RIR réel, série ${i + 1}">${['', 0, 1, 2, 3, 4, 5].map(v => `<option value="${v}"${v === (x.rir ?? '') ? ' selected' : ''}>${v === '' ? '–' : v === 5 ? '5+' : v}</option>`).join('')}</select></td><td><button class="check ${x.done ? 'on' : ''}" data-a="set" data-ex="${e.id}" data-i="${i}" aria-label="Valider la série ${i + 1}">${x.done ? '✓' : ''}</button></td></tr>`;
+    h += `<tr class="${i === cur ? 'cur' : ''}"><td>${i + 1}</td><td><input type="number" inputmode="numeric" min="0" placeholder="${hint.target ? hint.target[i] : r[0] + '-' + r[1]}" value="${esc(x.reps ?? '')}" data-in="reps" data-ex="${e.id}" data-i="${i}" aria-label="Reps, série ${i + 1}"></td><td><input type="number" inputmode="decimal" step="0.5" min="0" value="${esc(kg)}" data-in="kg" data-ex="${e.id}" data-i="${i}" aria-label="Charge en kg, série ${i + 1}"></td><td><select data-in="rir" data-ex="${e.id}" data-i="${i}" aria-label="RIR réel, série ${i + 1}">${['', 0, 1, 2, 3, 4, 5, 'stop'].map(v => `<option value="${v}"${v === (x.stop ? 'stop' : x.rir ?? '') ? ' selected' : ''}>${v === '' ? '–' : v === 5 ? '5+' : v === 'stop' ? 'Arrêt' : v}</option>`).join('')}</select></td><td><button class="check ${x.done ? 'on' : ''}" data-a="set" data-ex="${e.id}" data-i="${i}" aria-label="Valider la série ${i + 1}">${x.done ? '✓' : ''}</button></td></tr>`;
   }
   h += `</table>${ui.err[e.id] ? `<div class="err">${esc(ui.err[e.id])}</div>` : ''}`;
   const em = exMuscles(e.id);
@@ -187,12 +187,19 @@ function toggleWarm(i) {
   save(); render();
 }
 
+// Range un champ de la ligne de série. « Arrêt » n'est pas un nombre : il va dans stop, pas dans rir
+function setField(x, inp) {
+  const v = inp.value;
+  if (inp.dataset.in === 'rir') x.stop = v === 'stop' || undefined;
+  x[inp.dataset.in] = v === '' || v === 'stop' ? undefined : +v;
+}
+
 function toggleSet(exId, i) {
   const key = wk(), log = logFor(key, ui.sid);
   const sets = log.ex[exId] || (log.ex[exId] = []);
   const row = document.querySelectorAll(`[data-ex="${exId}"][data-i="${i}"]`);
   const x = setAt(sets, i);
-  row.forEach(inp => { if (inp.dataset.in) x[inp.dataset.in] = inp.value === '' ? undefined : +inp.value; });
+  row.forEach(inp => { if (inp.dataset.in) setField(x, inp); });
   if (!x.done && !(x.kg >= 0 && x.reps > 0)) { ui.err[exId] = 'Saisis la charge et les reps avant de valider.'; return render(); }
   delete ui.err[exId];
   x.done = !x.done;
@@ -511,7 +518,7 @@ document.addEventListener('input', ev => {
   const i = ev.target;
   if (['kg', 'reps', 'rir'].includes(i.dataset.in)) {
     const log = logFor(wk(), ui.sid), x = setAt(log.ex[i.dataset.ex] || (log.ex[i.dataset.ex] = []), +i.dataset.i);
-    x[i.dataset.in] = i.value === '' ? undefined : +i.value; save();
+    setField(x, i); save();
     if (i.dataset.in === 'kg' && i.dataset.i === '0') {
       const e = sessionState().exs.find(v => v.id === i.dataset.ex), kg = x.kg ?? hintFor(e, ui.sid).kg;
       document.querySelectorAll('[data-wpct]').forEach(c => { c.innerHTML = warmLoad(e, kg, +c.dataset.wpct); });

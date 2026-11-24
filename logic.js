@@ -156,16 +156,19 @@ function countSignals(f) {
 // Hausse de charge : champ "inc" de l'exercice, sinon 1 kg en isolation et 2,5 kg ailleurs
 function incFor(ex) { return ex.inc || (ex.iso ? 1 : 2.5); }
 
-// Objectif de reps par série (règle de l'utilisateur) : meilleur total à cette charge +1, réparti également, le reste sur les dernières séries.
-// Le meilleur total, et non le dernier : un objectif raté reste le même. past = séances, de la plus ancienne à la plus récente.
-function repTarget(past, max) {
+// Objectif de reps par série (règle de l'utilisateur) : total fait à cette charge +1, réparti également, le reste sur les dernières séries.
+// Objectif raté ou consolidation : le même. past = séances, de la plus ancienne à la plus récente ; efforts = effortOf() de chacune.
+function repTarget(past, max, efforts = []) {
   const n = past[past.length - 1].length, kg = past[past.length - 1][0].kg;
-  let best = 0;
-  for (const sets of past.filter(p => p.length === n).reverse()) {
-    if (!sets.every(s => s.kg === kg)) break;
-    best = Math.max(best, sets.reduce((t, s) => t + s.reps, 0));
-  }
-  const total = Math.min(best + 1, n * max);
+  let goal = null;
+  past.forEach((sets, i) => {
+    if (sets.length !== n) return;
+    if (!sets.every(s => s.kg === kg)) { goal = null; return; }
+    const sum = sets.reduce((t, s) => t + s.reps, 0);
+    if (goal === null) goal = efforts[i] === 'hold' ? sum : sum + 1;
+    else if (efforts[i] !== 'hold' && sum >= goal) goal = sum + 1;
+  });
+  const total = Math.min(goal, n * max);
   return Array.from({ length: n }, (_, i) => Math.floor(total / n) + (i >= n - total % n ? 1 : 0));
 }
 
@@ -183,25 +186,47 @@ function pastTimes(logs, e, sid, curKey, today) {
     out.push({ key, same: s === sid, rank, start: log.start || 0, sets });
   }
   out.sort((a, b) => a.key.localeCompare(b.key) || (a.start && b.start ? a.start - b.start : a.rank - b.rank));
-  return !all && out.some(t => t.same) ? out.filter(t => t.same) : out;
+  const list = !all && out.some(t => t.same) ? out.filter(t => t.same) : out;
+  // Une séance avec une série arrêtée (stop) ne fait ni avancer ni reculer l'objectif
+  const full = list.filter(t => !t.sets.some(s => s.stop));
+  return full.length ? full : list;
+}
+
+// Effort d'une séance, séries de travail seulement (méthode de l'utilisateur) : écarts RIR noté - RIR visé, 0 dans la fourchette visée.
+// 'up' : hausse permise, 'soft' : +1 rep seulement, 'hold' : consolidation, null : aucun RIR noté ou RIR visé illisible
+function effortOf(sets, target) {
+  const m = /^\s*(\d)(?:\s*-\s*(\d))?\s*$/.exec(target);
+  if (!m) return null;
+  const lo = +m[1], hi = +(m[2] || m[1]);
+  const d = sets.filter(s => !s.stop && isRir(s.rir)).map(s => (s.rir < lo ? s.rir - lo : Math.max(0, s.rir - hi)));
+  if (!d.length) return null;
+  const sum = d.reduce((a, b) => a + b, 0);
+  if (2 * sum < -d.length || Math.min(...d) <= -2) return 'hold'; // moyenne sous -0,5, ou une série à -2
+  return sum >= 0 ? 'up' : 'soft';
 }
 
 // Conseil du jour. sets = dernière séance (hors semaine allégée), need = séries prévues ce jour-là, n = séries prévues aujourd'hui,
-// past = séances comparables jusqu'à sets compris, light = semaine allégée en cours. target = objectif par série, ou null
-function progressionHint(sets, { range, need, inc, light, past, n }) {
+// past = séances comparables jusqu'à sets compris, efforts = effortOf() de chacune, light = semaine allégée en cours. target = objectif par série, ou null
+function progressionHint(sets, { range, need, inc, light, past, n, efforts = [] }) {
   const done = (sets || []).filter(s => s && s.kg >= 0 && s.reps > 0);
   if (!done.length) return { kg: null, target: null, text: 'Première fois : bas de fourchette, note ta charge.' };
   const fr = n => String(Math.round(n * 100) / 100).replace('.', ',');
   const kg = Math.max(...done.map(s => s.kg)), load = kg ? `${fr(kg)} kg` : 'poids du corps';
   if (light) return { kg, target: null, text: `Semaine allégée : même charge (${load}), sans forcer.` };
-  if (done.length >= need && done.every(s => s.kg === kg && s.reps >= range[1])) {
+  if (done.some(s => s.stop)) return { kg, target: null, text: `Même charge (${load}), mêmes reps.` };
+  const effort = efforts[efforts.length - 1], hard = effort === 'hold' || effort === 'soft';
+  const top = done.length >= need && done.every(s => s.kg === kg && s.reps >= range[1]);
+  if (top && !hard) {
     const up = kg + inc;
     return { kg: up, target: null, text: `Haut de fourchette atteint : ${fr(up)} kg${kg ? '' : ' de lest'} (ou le cran suivant), repars à ${range[0]} reps.` };
   }
   if (past && done.length >= need && done.length === n && done.every(s => s.kg === kg)) {
-    const target = repTarget(past.map(p => p.filter(s => s && s.kg >= 0 && s.reps > 0)), range[1]);
-    return { kg, target, text: `Objectif ${target.join('-')} ${kg ? 'à ' + load : 'au poids du corps'}.` };
+    const target = top ? Array(n).fill(range[1]) : repTarget(past.map(p => p.filter(s => s && s.kg >= 0 && s.reps > 0)), range[1], efforts);
+    const goal = `bjectif ${target.join('-')} ${kg ? 'à ' + load : 'au poids du corps'}`;
+    if (effort === 'hold') return { kg, target, text: `Consolidation : o${goal}, effort au-dessus de la cible.` };
+    return { kg, target, text: top ? `O${goal} : charge maintenue, effort un peu au-dessus de la cible.` : `O${goal}.` };
   }
+  if (top || effort === 'hold') return { kg, target: null, text: `Même charge (${load}), mêmes reps : effort au-dessus de la cible.` };
   return { kg, target: null, text: `Même charge (${load}), +1 rep sur une série.` };
 }
 
@@ -243,10 +268,14 @@ function navyBodyFat(sex, waist, neck, height, hips) {
 
 const MESURES = ['poids', 'poitrine', 'taille', 'hanches', 'cuisse', 'bras', 'cou'];
 
-// RIR réel d'une série (champ "rir", facultatif) : 0 à 5, 5 = « 5 ou plus »
+// RIR réel d'une série (champ "rir", facultatif) : 0 à 5, 5 = « 5 ou plus ». stop: true = série arrêtée exprès (douleur, crampe), sans RIR
 const isRir = v => isInt(v, 0, 5);
-// Garde la série, sans son RIR s'il n'est pas valide
-function cleanSet(s) { if (!isObj(s)) return {}; const { rir, ...rest } = s; return isRir(rir) ? s : rest; }
+// Garde la série, sans son RIR ou son arrêt s'ils ne sont pas valides
+function cleanSet(s) {
+  if (!isObj(s)) return {};
+  const { rir, stop, ...rest } = s;
+  return stop === true ? { ...rest, stop } : isRir(rir) ? { ...rest, rir } : rest;
+}
 
 // Zones du check-in articulaire (PRD). Niveaux : 0 rien, 1 gêne, 2 douleur ; zone sans réponse : absente
 const JOINTS = { shoulders: 'Épaules', elbows: 'Coudes', knees: 'Genoux', lower_back: 'Lombaires', nerve: 'Asymétrie / blocage nerveux' };
@@ -309,4 +338,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, JOINTS, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, JOINTS, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
