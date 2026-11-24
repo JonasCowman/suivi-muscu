@@ -173,7 +173,7 @@ assert.strictEqual(mig.logs['2026-11-30|lundi'].ex.decline[0].kg, 62);
 assert.strictEqual(mig.fatigue['2026-11-23'].count, 2);
 assert.strictEqual(mig.fatigue['2026-11-30'].count, 1);
 assert.deepStrictEqual(mig.mesures, [{ date: '2026-11-23', poids: 82, taille: 80 }]);
-assert.deepStrictEqual(mig.profile, { prenom: '', sexe: 'h', taille: 183, start: null });
+assert.deepStrictEqual(mig.profile, { prenom: '', sexe: 'h', taille: 183, start: null, zones: [] });
 assert.deepStrictEqual(mig.daily, old.daily);
 assert.deepStrictEqual(L.migrate(clone(mig), DEF), mig, 'migration rejouable sans effet');
 // RIR réel : entier de 0 à 5 (5 = « 5 ou plus »), facultatif ; une valeur fausse est retirée sans perdre la série
@@ -186,6 +186,14 @@ const wm = L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: {}, warm: { decli
 assert.deepStrictEqual(wm.logs['2026-11-23|lundi'].warm, { decline: [true, false, false] });
 assert.deepStrictEqual(wm.logs['2026-11-23|mardi'].warm, {});
 assert.ok(!('warm' in mig.logs['2026-11-23|lundi']), 'ancienne séance inchangée');
+// Check-in articulaire : zones du profil et réponses contrôlées ; une zone sans réponse n'est pas « Rien » (0)
+const pz = zones => L.migrate({ v: 2, logs: {}, profile: { prenom: 'X', sexe: 'f', taille: 170, start: null, zones } }, DEF).profile.zones;
+assert.deepStrictEqual(pz(['knees', '<b>', 'elbows', 'knees']), ['elbows', 'knees']);
+for (const v of [undefined, null, 'knees', {}, 3]) assert.deepStrictEqual(pz(v), [], 'ancien profil ou valeur fausse');
+const jn = joints => L.migrate({ v: 2, logs: { '2026-11-23|lundi': { ex: {}, joints } } }, DEF).logs['2026-11-23|lundi'].joints;
+assert.deepStrictEqual(jn({ knees: 0, elbows: 2, shoulders: 3, lower_back: '1', nerve: null, '<b>': 1 }), { elbows: 2, knees: 0 });
+for (const v of [null, 5, [], 'x']) assert.deepStrictEqual(jn(v), {});
+assert.ok(!('joints' in mig.logs['2026-11-23|lundi']), 'ancienne séance inchangée');
 // Deux anciennes semaines tombant la même semaine réelle : aucune donnée perdue
 const coll = L.migrate({ logs: { '1|lundi': { start: Date.parse('2026-11-30T18:00:00'), ex: { a: [{ kg: 1, reps: 1, done: true }] } }, '2|lundi': { start: Date.parse('2026-12-01T18:00:00'), ex: { a: [{ kg: 2, reps: 1, done: true }] } } } }, DEF);
 assert.deepStrictEqual(Object.values(coll.logs).map(l => l.ex.a[0].kg).sort(), [1, 2]);

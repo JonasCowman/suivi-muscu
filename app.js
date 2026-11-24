@@ -1,6 +1,6 @@
 // Interface. Données stockées uniquement sur l'appareil (localStorage).
 const KEY = 'muscu-v1';
-// profile = { prenom, sexe: 'h' | 'f', taille, start } ; program = programme importé (null = programme par défaut)
+// profile = { prenom, sexe: 'h' | 'f', taille, start, zones } ; program = programme importé (null = programme par défaut)
 // logs et fatigue : rangés par lundi de la semaine ("2026-11-23|lundi") ; shifts : lundis où le programme a été décalé
 const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null });
 const today = () => new Date().toLocaleDateString('sv-SE');
@@ -105,6 +105,13 @@ function sessionState() {
 
 const mmss = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 
+// Check-in articulaire d'une séance terminée, pour les zones cochées dans Profile
+function viewJoints(log) {
+  const zones = db.profile.zones || [], v = log.joints || {};
+  if (!log.done || !zones.length) return '';
+  return `<div class="card"><div class="disp">Check-in articulaire</div><div class="mut">Facultatif. Enregistré dès que tu touches.</div>${zones.map(z => `<div style="margin-top:12px">${JOINTS[z]}</div><div class="lvls" role="group" aria-label="${JOINTS[z]}">${['Rien', 'Gêne', 'Douleur'].map((l, i) => `<button class="lvl${i} ${v[z] === i ? 'on' : ''}" data-a="joint" data-z="${z}" data-v="${i}" aria-pressed="${v[z] === i}">${v[z] === i ? '✓ ' : ''}${l}</button>`).join('')}</div>`).join('')}</div>`;
+}
+
 // Vue d'ensemble de la séance : un exercice par ligne, on touche pour ouvrir la page séance
 function viewWork() {
   if (ui.focus) return viewFocus();
@@ -112,6 +119,7 @@ function viewWork() {
   let h = `<div class="chips">${P.sessions.map(x => `<button class="${x.id === sid ? 'on' : ''}" data-a="pick" data-sid="${x.id}">${esc(x.name.split(' — ')[0])}${sessionDone(key, x.id) ? ' ✓' : ''}</button>`).join('')}</div>`;
   h += `<h1>${esc(s.name)}</h1><div class="row mut" style="margin:4px 0 6px"><span>Semaine ${w} · ${esc(mesoOf(w).name)}</span><span id="elapsed">${log.start ? '' : 'Pas commencée'}</span></div>`;
   h += `<div class="bar" style="margin-bottom:14px"><div style="width:${pct}%"></div></div>`;
+  h += viewJoints(log);
   if (f === 2 && !mesoOf(w).deload) h += `<div class="banner mid">Séries bonus retirées et RIR 2 cette semaine (bilan fatigue : 2 signaux).</div>`;
   if (f >= 3 && !mesoOf(w).deload) h += `<div class="banner high">Semaine allégée anticipée, RIR 3-4 (bilan fatigue : ${f} signaux).</div>`;
   if (!log.done) h += `<button class="primary" style="width:100%;margin-bottom:12px" data-a="start">${log.start ? 'Reprendre la séance' : 'Démarrer la séance'}</button>`;
@@ -342,6 +350,13 @@ function profileFields(pr, k) {
   <div class="mut" style="font-size:12px">Les semaines vont du lundi au dimanche. Vide = ${esc(frDate(defaultStart(k)))}.</div>`;
 }
 
+// Zones à suivre au check-in articulaire (Profile seulement)
+function zoneFields(pr) {
+  const on = pr.zones || [];
+  return `<div class="mut" style="margin-top:14px">Zones à surveiller après chaque séance (facultatif)</div><div class="zones" role="group" aria-label="Zones à surveiller">${Object.entries(JOINTS).map(([z, l]) => `<button class="${on.includes(z) ? 'on-sel' : ''}" data-a="zone" data-z="${z}" aria-pressed="${on.includes(z)}">${on.includes(z) ? '✓ ' : ''}${l}</button>`).join('')}</div>
+  <div class="mut" style="margin-top:6px">Ce sont des données de santé : elles restent sur ce téléphone et dans tes fichiers exportés.</div>`;
+}
+
 const progStart = () => (db.program || DEFAULT_PROGRAM).start;
 // Premier lancement : jamais une date passée, sinon on arriverait au milieu du programme
 function defaultStart(k) { return k === 's' && progStart() < today() ? nextMonday() : progStart(); }
@@ -350,7 +365,7 @@ function readProfile(d, k) {
   const taille = +d.taille, start = d.start || null;
   if (!d.sexe) return { error: 'Choisis Homme ou Femme.' };
   if (!(taille >= 120 && taille <= 230)) return { error: 'Indique ta taille en cm (entre 120 et 230).' };
-  return { prenom: String(d.prenom || '').trim().slice(0, 40), sexe: d.sexe, taille, start: start || (k === 's' ? defaultStart('s') : null) };
+  return { prenom: String(d.prenom || '').trim().slice(0, 40), sexe: d.sexe, taille, start: start || (k === 's' ? defaultStart('s') : null), zones: cleanZones(d.zones) };
 }
 
 function viewProgramCard() {
@@ -384,7 +399,7 @@ function viewProf() {
   const nLogs = Object.values(db.logs).filter(l => l.done).length;
   const pr = db.profile;
   return `<h1>Profile</h1><div class="mut" style="margin-bottom:14px">${nLogs} séance${nLogs > 1 ? 's' : ''} terminée${nLogs > 1 ? 's' : ''} · début le ${esc(frDate(P.start))}</div>
-  <h2>Mon profil</h2><div class="card">${profileFields(ui.profDraft || pr, 'p')}${ui.err.prof ? `<div class="err">${esc(ui.err.prof)}</div>` : ''}<button class="primary" style="width:100%;margin-top:10px" data-a="prof-save">Enregistrer le profil</button></div>
+  <h2>Mon profil</h2><div class="card">${profileFields(ui.profDraft || pr, 'p')}${zoneFields(ui.profDraft || pr)}${ui.err.prof ? `<div class="err">${esc(ui.err.prof)}</div>` : ''}<button class="primary" style="width:100%;margin-top:10px" data-a="prof-save">Enregistrer le profil</button></div>
   ${viewProgramCard()}
   <h2>Calendrier</h2><div class="card"><div class="row"><span>Décalage</span><b>${shiftCount()} semaine${shiftCount() > 1 ? 's' : ''}</b></div><div class="mut" style="margin:6px 0 10px">Après des séances ratées (fêtes) ou une semaine allégée anticipée, décale d'une semaine : le programme reprend la semaine précédente, tes séances déjà faites ne bougent pas.</div><div class="row"><button data-a="shift" data-d="-1" style="flex:1">Annuler le dernier</button><button data-a="shift" data-d="1" style="flex:1">+ 1 semaine</button></div></div>
   <h2>Sauvegarde</h2><div class="card"><div class="mut" style="margin-bottom:10px">Tes données restent sur ce téléphone. Exporte-les chaque semaine : si l'appli est supprimée, elles sont perdues.</div><div class="row"><button data-a="export" style="flex:1">Exporter</button><button style="flex:1" data-a="import-btn">Importer</button><input type="file" accept="application/json" id="importFile" hidden></div>${ui.err.imp ? `<div class="err">${esc(ui.err.imp)}</div>` : ''}</div>
@@ -439,7 +454,7 @@ document.addEventListener('click', ev => {
   }
   else if (a === 'warm') toggleWarm(+t.dataset.w);
   else if (a === 'set') toggleSet(t.dataset.ex, +t.dataset.i);
-  else if (a === 'finish') { const l = logFor(key, ui.sid); l.done = !l.done; l.date = today(); save(); render(); }
+  else if (a === 'finish') { const l = logFor(key, ui.sid); l.done = !l.done; l.date = today(); save(); render(); if (l.done) window.scrollTo(0, 0); }
   else if (a === 'rest-add' && ui.rest) { ui.rest.end += 30000; ui.rest.total += 30; tick(); }
   else if (a === 'rest-skip') { ui.rest = null; tick(); }
   else if (a === 'go-fatigue') { ui.tab = 'stats'; render(); $('#fatigue').scrollIntoView(); }
@@ -458,6 +473,15 @@ document.addEventListener('click', ev => {
   else if (a === 'shift') {
     if (+t.dataset.d > 0) db.shifts.push(key > mondayOf(P.start) ? key : mondayOf(P.start));
     else if (shiftCount()) { db.shifts.sort(); db.shifts.pop(); }
+    save(); render();
+  }
+  else if (a === 'zone') {
+    const d = draft('p'), z = t.dataset.z, on = d.zones || [];
+    d.zones = cleanZones(on.includes(z) ? on.filter(x => x !== z) : [...on, z]); render();
+  }
+  else if (a === 'joint') {
+    const l = logFor(key, ui.sid), j = l.joints || (l.joints = {}), z = t.dataset.z, v = +t.dataset.v;
+    if (j[z] === v) delete j[z]; else j[z] = v;
     save(); render();
   }
   else if (a === 'pick-sex') {

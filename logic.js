@@ -248,6 +248,15 @@ const isRir = v => isInt(v, 0, 5);
 // Garde la série, sans son RIR s'il n'est pas valide
 function cleanSet(s) { if (!isObj(s)) return {}; const { rir, ...rest } = s; return isRir(rir) ? s : rest; }
 
+// Zones du check-in articulaire (PRD). Niveaux : 0 rien, 1 gêne, 2 douleur ; zone sans réponse : absente
+const JOINTS = { shoulders: 'Épaules', elbows: 'Coudes', knees: 'Genoux', lower_back: 'Lombaires', nerve: 'Asymétrie / blocage nerveux' };
+const cleanZones = v => Object.keys(JOINTS).filter(z => Array.isArray(v) && v.includes(z));
+function cleanJoints(v) {
+  const out = {};
+  for (const z of Object.keys(JOINTS)) if (isObj(v) && isInt(v[z], 0, 2)) out[z] = v[z];
+  return out;
+}
+
 // Séries W cochées d'une séance : { exercice: [true, false…] }
 function cleanWarm(w) {
   const out = {};
@@ -263,8 +272,8 @@ function migrate(d, defaultProgram, today) {
   const height = Number(d.height) > 0 ? Number(d.height) : 183;
   let profile = null;
   if (isObj(d.profile)) {
-    profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null };
-  } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null };
+    profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null, zones: cleanZones(d.profile.zones) };
+  } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null, zones: [] };
   const start = () => mondayOf((profile && profile.start) || (program || defaultProgram).start);
   const weekKey = n => addDays(start(), 7 * (n - 1));
   let shifts = Array.isArray(d.shifts) ? d.shifts.filter(isDate) : [];
@@ -284,7 +293,7 @@ function migrate(d, defaultProgram, today) {
       key = mondayOf(log.start > 0 ? new Date(log.start).toLocaleDateString('sv-SE') : isDate(log.date) ? log.date : weekKey(+w));
       while (logs[key + '|' + sid]) key = addDays(key, -7);
     }
-    logs[key + '|' + sid] = { ...log, ex, ...('warm' in log && { warm: cleanWarm(log.warm) }) };
+    logs[key + '|' + sid] = { ...log, ex, ...('warm' in log && { warm: cleanWarm(log.warm) }), ...('joints' in log && { joints: cleanJoints(log.joints) }) };
   }
   const fatigue = {};
   for (const [k, f] of Object.entries(isObj(d.fatigue) ? d.fatigue : {})) {
@@ -300,4 +309,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, JOINTS, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };

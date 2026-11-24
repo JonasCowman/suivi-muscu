@@ -53,6 +53,12 @@ button.ghost{background:none}
 .chips button.on,button.on-sel{border-color:var(--cyan);color:var(--cyan)}
 .bar{height:6px;border-radius:3px;background:var(--card2);overflow:hidden}
 .bar>div{height:100%;background:var(--cyan)}
+:is(.zones,.lvls){display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+:is(.zones,.lvls) button{min-height:44px}
+.lvls button{flex:1;padding:10px 6px}
+.lvl0{color:var(--ok)}.lvl1{color:var(--warn)}.lvl2{color:var(--danger)}
+.lvl0.on{background:var(--ok)}.lvl1.on{background:var(--warn)}.lvl2.on{background:var(--danger)}
+.lvls .on{color:#000;font-weight:600}
 table.sets{width:100%;border-collapse:collapse;margin-top:8px}
 table.sets caption{text-align:left;padding:4px}
 table.sets th{font-size:11px;color:var(--mut);font-weight:500;text-align:left;padding:4px}
