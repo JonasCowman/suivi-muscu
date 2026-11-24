@@ -74,6 +74,44 @@ assert.strictEqual(H(S([60, 12], [60, 12], [60, 12]), { light: true }).kg, 60, '
 assert.strictEqual(L.incFor(ex('lathalteres')), 1);
 assert.strictEqual(L.incFor(ex('decline')), 2.5);
 assert.strictEqual(L.incFor({ iso: true }), 1);
+assert.deepStrictEqual(['hack', 'presse', 'sdjt', 'hipthrust', 'split'].map(id => L.incFor(ex(id))), [5, 5, 5, 5, 2.5]);
+
+// Objectif chiffré : total de la dernière fois +1, réparti, le reste sur les dernières séries
+const R = (kg, ...reps) => S(...reps.map(r => [kg, r]));
+const T = (past, o) => H(past[past.length - 1], { past, n: past[past.length - 1].length, ...o }).target;
+assert.deepStrictEqual(T([R(60, 8, 8, 8)]), [8, 8, 9]);
+assert.deepStrictEqual(T([R(60, 8, 8, 8), R(60, 8, 8, 9)]), [8, 9, 9]);
+assert.deepStrictEqual(T([R(60, 8, 8, 9), R(60, 8, 9, 9)]), [9, 9, 9]);
+assert.deepStrictEqual(T([R(5, 17, 16, 15)], { range: [15, 20], inc: 1 }), [16, 16, 17], 'séries inégales');
+assert.deepStrictEqual(T([R(60, 8, 8, 8), R(60, 10, 8, 9)]), [9, 9, 10], 'objectif dépassé : total réparti');
+assert.deepStrictEqual(T([R(60, 8, 8, 9), R(60, 8, 8, 8)]), [8, 9, 9], 'objectif raté : inchangé');
+assert.deepStrictEqual(T([R(60, 14, 12, 10)]), [12, 12, 12], 'plafonné au haut de la fourchette');
+assert.strictEqual(H(R(60, 14, 12, 10), { past: [R(60, 14, 12, 10)], n: 3 }).kg, 60, 'pas de hausse si une série manque');
+// Cycle : haut de fourchette, hausse, reprise à la nouvelle charge
+assert.strictEqual(T([R(60, 12, 12, 11), R(60, 12, 12, 12)]), null);
+assert.strictEqual(H(R(60, 12, 12, 12), { past: [R(60, 12, 12, 12)], n: 3 }).kg, 62.5);
+assert.deepStrictEqual(T([R(60, 12, 12, 12), R(62.5, 8, 8, 7)]), [8, 8, 8]);
+assert.deepStrictEqual(T([R(60, 12, 12, 11), R(62.5, 8, 8, 8), R(60, 9, 9, 9)]), [9, 9, 10], 'charge reprise : le calcul repart');
+// Une séance incomplète passée est ignorée ; la dernière, incomplète ou mélangée, ne donne pas d'objectif
+assert.deepStrictEqual(T([R(60, 9, 9, 9), R(60, 9, 9), R(60, 8, 8, 8)]), [9, 9, 10]);
+assert.strictEqual(T([R(60, 8, 8)]), null);
+assert.strictEqual(T([S([60, 8], [55, 8], [55, 8])]), null);
+assert.strictEqual(T([R(60, 8, 8, 8)], { n: 2 }), null, 'nombre de séries différent ce jour');
+assert.strictEqual(T([R(60, 8, 8, 8)], { light: true }), null);
+assert.strictEqual(H(R(0, 8, 8, 8), { past: [R(0, 8, 8, 8)], n: 3 }).text, 'Objectif 8-8-9 au poids du corps.');
+assert.strictEqual(H(R(62.5, 8, 8, 8), { past: [R(62.5, 8, 8, 8)], n: 3 }).text, 'Objectif 8-8-9 à 62,5 kg.');
+assert.deepStrictEqual(T([R(40, 18, 18)], { range: [20, 30], need: 2 }), [18, 19], 'fourchette relevée');
+assert.strictEqual(H([], { past: [], n: 3 }).target, null);
+
+// Séance comparée : la même la semaine d'avant ; protocole postural : celle juste avant, même semaine comprise
+const at = (start, reps, o) => ({ start, ex: { x: R(5, reps) }, ...o });
+const plogs = { '2026-11-16|lundi': at(1, 20), '2026-11-16|vendredi': at(2, 21), '2026-11-23|lundi': at(3, 22), '2026-11-23|mardi': at(5, 23, { ex: { x: [{ kg: 5, reps: 9 }] } }), '2026-11-09|vendredi': at(0, 30, { light: true }) };
+const pt = (cat, sid, now, logs = plogs) => L.pastTimes(logs, { id: 'x', cat }, sid, '2026-11-23', now).map(t => t.sets[0].reps);
+assert.deepStrictEqual(pt(undefined, 'vendredi', 9), [21], 'semaine allégée et autres jours ignorés');
+assert.deepStrictEqual(pt(undefined, 'lundi', 9), [20], 'séance en cours exclue');
+assert.deepStrictEqual(pt(undefined, 'jeudi', 9), [20, 21], 'jamais faite ce jour-là : les autres séances');
+assert.deepStrictEqual(pt('postural', 'mardi', 9), [20, 21, 22]);
+assert.deepStrictEqual(pt('postural', 'lundi', 9), [20, 21], 'une séance commencée après ne compte pas');
 
 assert.ok(Math.abs(L.navyBodyFat('h', 80, 38.5, 183) - 11.2) < 0.3);
 assert.strictEqual(L.navyBodyFat('h', 30, 38, 183), null);

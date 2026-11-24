@@ -349,6 +349,7 @@ const DEFAULT_PROGRAM = {
       12
      ],
      "rest": 180,
+     "inc": 5,
      "big": true,
      "note": "Arrêt avant la parallèle, descente 2-3 s",
      "muscles": {
@@ -365,6 +366,7 @@ const DEFAULT_PROGRAM = {
       15
      ],
      "rest": 120,
+     "inc": 5,
      "note": "Amplitude contrôlée",
      "muscles": {
       "quadriceps": 1,
@@ -593,6 +595,7 @@ const DEFAULT_PROGRAM = {
       12
      ],
      "rest": 180,
+     "inc": 5,
      "big": true,
      "note": "Dos neutre, barre collée aux jambes",
      "muscles": {
@@ -624,6 +627,7 @@ const DEFAULT_PROGRAM = {
       12
      ],
      "rest": 120,
+     "inc": 5,
      "note": "Pause 1 s en haut",
      "muscles": {
       "fessiers": 1

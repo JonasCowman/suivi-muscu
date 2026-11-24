@@ -33,7 +33,6 @@ const light = key => isLight(progWeek(key), prevFatigue(key));
 const fmt = n => (Math.round(n * 10) / 10).toString().replace('.', ',');
 const shortDate = d => d.slice(8, 10) + '/' + d.slice(5, 7);
 const exById = id => P.sessions.flatMap(s => s.ex).find(e => e.id === id);
-const doneSets = arr => (arr || []).filter(s => s && s.done);
 // Série i, en créant les précédentes si besoin (sinon la sauvegarde contient des trous)
 function setAt(arr, i) { while (arr.length <= i) arr.push({}); return arr[i]; }
 
@@ -42,21 +41,9 @@ function logFor(key, sid) {
   return db.logs[k] || (db.logs[k] = { ex: {} });
 }
 
-// Dernière fois que l'exercice a été fait, hors semaines allégées : même séance de préférence
-function lastTime(exId, sid, beforeKey) {
-  let best = null;
-  for (const [k, log] of Object.entries(db.logs)) {
-    const [key, s] = k.split('|');
-    if (key >= beforeKey || log.light || !doneSets(log.ex[exId]).length) continue;
-    const same = s === sid;
-    if (!best || (same && !best.same) || (same === best.same && key > best.key)) best = { key, same, sets: doneSets(log.ex[exId]) };
-  }
-  return best;
-}
-
 function hintFor(e, sid) {
-  const key = wk(), last = lastTime(e.id, sid, key);
-  return progressionHint(last && last.sets, { range: rangeFor(week(), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key) });
+  const key = wk(), past = pastTimes(db.logs, e, sid, key, Date.now()), last = past[past.length - 1];
+  return progressionHint(last && last.sets, { range: rangeFor(week(), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key), past: past.map(t => t.sets), n: plannedSets(key, e) });
 }
 
 function bestByWeek(exId) {
@@ -162,7 +149,7 @@ function viewFocus() {
   for (let i = 0; i < n; i++) {
     const x = sets[i] || {};
     const kg = x.kg ?? sets.slice(0, i).reverse().find(p => p && p.kg != null)?.kg ?? hint.kg ?? '';
-    h += `<tr class="${i === cur ? 'cur' : ''}"><td>${i + 1}</td><td><input type="number" inputmode="numeric" min="0" placeholder="${r[0]}-${r[1]}" value="${esc(x.reps ?? '')}" data-in="reps" data-ex="${e.id}" data-i="${i}" aria-label="Reps, série ${i + 1}"></td><td><input type="number" inputmode="decimal" step="0.5" min="0" value="${esc(kg)}" data-in="kg" data-ex="${e.id}" data-i="${i}" aria-label="Charge en kg, série ${i + 1}"></td><td><select data-in="rir" data-ex="${e.id}" data-i="${i}" aria-label="RIR réel, série ${i + 1}">${['', 0, 1, 2, 3, 4, 5].map(v => `<option value="${v}"${v === (x.rir ?? '') ? ' selected' : ''}>${v === '' ? '–' : v === 5 ? '5+' : v}</option>`).join('')}</select></td><td><button class="check ${x.done ? 'on' : ''}" data-a="set" data-ex="${e.id}" data-i="${i}" aria-label="Valider la série ${i + 1}">${x.done ? '✓' : ''}</button></td></tr>`;
+    h += `<tr class="${i === cur ? 'cur' : ''}"><td>${i + 1}</td><td><input type="number" inputmode="numeric" min="0" placeholder="${hint.target ? hint.target[i] : r[0] + '-' + r[1]}" value="${esc(x.reps ?? '')}" data-in="reps" data-ex="${e.id}" data-i="${i}" aria-label="Reps, série ${i + 1}"></td><td><input type="number" inputmode="decimal" step="0.5" min="0" value="${esc(kg)}" data-in="kg" data-ex="${e.id}" data-i="${i}" aria-label="Charge en kg, série ${i + 1}"></td><td><select data-in="rir" data-ex="${e.id}" data-i="${i}" aria-label="RIR réel, série ${i + 1}">${['', 0, 1, 2, 3, 4, 5].map(v => `<option value="${v}"${v === (x.rir ?? '') ? ' selected' : ''}>${v === '' ? '–' : v === 5 ? '5+' : v}</option>`).join('')}</select></td><td><button class="check ${x.done ? 'on' : ''}" data-a="set" data-ex="${e.id}" data-i="${i}" aria-label="Valider la série ${i + 1}">${x.done ? '✓' : ''}</button></td></tr>`;
   }
   h += `</table>${ui.err[e.id] ? `<div class="err">${esc(ui.err[e.id])}</div>` : ''}`;
   const em = exMuscles(e.id);

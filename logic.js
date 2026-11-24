@@ -156,18 +156,53 @@ function countSignals(f) {
 // Hausse de charge : champ "inc" de l'exercice, sinon 1 kg en isolation et 2,5 kg ailleurs
 function incFor(ex) { return ex.inc || (ex.iso ? 1 : 2.5); }
 
-// Règle +1 rep. sets = dernière séance (hors semaine allégée), need = séries prévues ce jour-là, light = semaine allégée en cours
-function progressionHint(sets, { range, need, inc, light }) {
+// Objectif de reps par série (règle de l'utilisateur) : meilleur total à cette charge +1, réparti également, le reste sur les dernières séries.
+// Le meilleur total, et non le dernier : un objectif raté reste le même. past = séances, de la plus ancienne à la plus récente.
+function repTarget(past, max) {
+  const n = past[past.length - 1].length, kg = past[past.length - 1][0].kg;
+  let best = 0;
+  for (const sets of past.filter(p => p.length === n).reverse()) {
+    if (!sets.every(s => s.kg === kg)) break;
+    best = Math.max(best, sets.reduce((t, s) => t + s.reps, 0));
+  }
+  const total = Math.min(best + 1, n * max);
+  return Array.from({ length: n }, (_, i) => Math.floor(total / n) + (i >= n - total % n ? 1 : 0));
+}
+
+const doneSets = arr => (arr || []).filter(s => s && s.done);
+
+// Séances passées de l'exercice, hors semaines allégées, de la plus ancienne à la plus récente : même séance de préférence.
+// Protocole postural (fait à chaque séance) : toutes les séances commencées avant celle-ci, la veille comprise.
+function pastTimes(logs, e, sid, curKey, today) {
+  const all = e.cat === 'postural', now = (logs[curKey + '|' + sid] || {}).start || today, out = [];
+  for (const [k, log] of Object.entries(logs)) {
+    const [key, s] = k.split('|'), sets = doneSets(log.ex[e.id]);
+    if (log.light || !sets.length || key > curKey || k === curKey + '|' + sid) continue;
+    const rank = P.sessions.findIndex(x => x.id === s);
+    if (all ? key === curKey && !(log.start < now) : key === curKey) continue;
+    out.push({ key, same: s === sid, rank, start: log.start || 0, sets });
+  }
+  out.sort((a, b) => a.key.localeCompare(b.key) || (a.start && b.start ? a.start - b.start : a.rank - b.rank));
+  return !all && out.some(t => t.same) ? out.filter(t => t.same) : out;
+}
+
+// Conseil du jour. sets = dernière séance (hors semaine allégée), need = séries prévues ce jour-là, n = séries prévues aujourd'hui,
+// past = séances comparables jusqu'à sets compris, light = semaine allégée en cours. target = objectif par série, ou null
+function progressionHint(sets, { range, need, inc, light, past, n }) {
   const done = (sets || []).filter(s => s && s.kg >= 0 && s.reps > 0);
-  if (!done.length) return { kg: null, text: 'Première fois : bas de fourchette, note ta charge.' };
+  if (!done.length) return { kg: null, target: null, text: 'Première fois : bas de fourchette, note ta charge.' };
   const fr = n => String(Math.round(n * 100) / 100).replace('.', ',');
   const kg = Math.max(...done.map(s => s.kg)), load = kg ? `${fr(kg)} kg` : 'poids du corps';
-  if (light) return { kg, text: `Semaine allégée : même charge (${load}), sans forcer.` };
+  if (light) return { kg, target: null, text: `Semaine allégée : même charge (${load}), sans forcer.` };
   if (done.length >= need && done.every(s => s.kg === kg && s.reps >= range[1])) {
     const up = kg + inc;
-    return { kg: up, text: `Haut de fourchette atteint : ${fr(up)} kg${kg ? '' : ' de lest'} (ou le cran suivant), repars à ${range[0]} reps.` };
+    return { kg: up, target: null, text: `Haut de fourchette atteint : ${fr(up)} kg${kg ? '' : ' de lest'} (ou le cran suivant), repars à ${range[0]} reps.` };
   }
-  return { kg, text: `Même charge (${load}), +1 rep sur une série.` };
+  if (past && done.length >= need && done.length === n && done.every(s => s.kg === kg)) {
+    const target = repTarget(past.map(p => p.filter(s => s && s.kg >= 0 && s.reps > 0)), range[1]);
+    return { kg, target, text: `Objectif ${target.join('-')} ${kg ? 'à ' + load : 'au poids du corps'}.` };
+  }
+  return { kg, target: null, text: `Même charge (${load}), +1 rep sur une série.` };
 }
 
 // Repos après une série W, selon le pourcentage de la charge de travail (barème fourni par l'utilisateur)
@@ -265,4 +300,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
