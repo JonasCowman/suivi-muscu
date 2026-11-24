@@ -23,7 +23,7 @@ Un programme est un fichier JSON. Le plus simple : dans l'appli, onglet **Profil
 |---|---|---|
 | `format` | oui | Toujours `"suivi-muscu-programme"` |
 | `name` | oui | Nom affiché dans l'appli |
-| `start` | oui | Date de début (AAAA-MM-JJ), de préférence un lundi. Le profil peut la remplacer |
+| `start` | oui | Date de début (AAAA-MM-JJ), de préférence un lundi : les semaines vont du lundi au dimanche. Le profil peut la remplacer. Garde la même date si tu retouches un programme en cours |
 | `weeks` | oui | Nombre de semaines (1 à 104) |
 | `daily` | non | Tâche quotidienne cochable sur le Dashboard (supprime le champ si inutile) |
 | `keyLifts` | non | Identifiants des exercices suivis dans « Objectifs de charge » |
@@ -61,7 +61,7 @@ Ils doivent couvrir toutes les semaines, de 1 à `weeks`, sans trou ni chevauche
 
 | Champ | Rôle |
 |---|---|
-| `id` | Identifiant unique, sans espace (sert à relier tes séances d'une semaine à l'autre : ne le change plus une fois utilisé) |
+| `id` | Identifiant unique : lettres sans accent, chiffres, tirets (40 caractères maximum) (sert à relier tes séances d'une semaine à l'autre : ne le change plus une fois utilisé) |
 | `dow` | Jour de la semaine : 0 dimanche, 1 lundi … 6 samedi (sert à ouvrir la bonne séance le jour J) |
 | `n` | Nom de l'exercice |
 | `s` | Nombre de séries (1 à 10) |
@@ -71,6 +71,7 @@ Ils doivent couvrir toutes les semaines, de 1 à `weeks`, sans trou ni chevauche
 | `iso` | Isolation : RIR `rirIso` (sinon `rirBig`) |
 | `noFail` | Jamais à l'échec (RIR 2-3) |
 | `bonus` | Nombre de séries retirées si le bilan fatigue compte 2 signaux |
+| `inc` | Hausse de charge en kg quand le haut de la fourchette est atteint (par défaut 1 en isolation, 2.5 sinon) |
 | `ranges` | Change la fourchette à partir d'une semaine donnée |
 | `tempo`, `note` | Affichés sur la page séance |
 | `muscles` | Muscles travaillés : 1 = principal, 0.5 = secondaire |

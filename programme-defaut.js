@@ -173,7 +173,8 @@ const DEFAULT_PROGRAM = {
         30
        ]
       }
-     ]
+     ],
+     "inc": 2.5
     },
     {
      "id": "decline",
@@ -230,7 +231,8 @@ const DEFAULT_PROGRAM = {
         20
        ]
       }
-     ]
+     ],
+     "inc": 2
     },
     {
      "id": "tirageneutre",
@@ -277,7 +279,8 @@ const DEFAULT_PROGRAM = {
      "note": "Coudes fixes",
      "muscles": {
       "triceps": 1
-     }
+     },
+     "inc": 2.5
     }
    ]
   },
@@ -315,7 +318,8 @@ const DEFAULT_PROGRAM = {
      "note": "Les ischios avant les quadriceps",
      "muscles": {
       "ischios": 1
-     }
+     },
+     "inc": 2.5
     },
     {
      "id": "legext",
@@ -331,7 +335,8 @@ const DEFAULT_PROGRAM = {
      "note": "RIR 2-3, pas d'échec",
      "muscles": {
       "quadriceps": 1
-     }
+     },
+     "inc": 2.5
     },
     {
      "id": "hack",
@@ -377,7 +382,8 @@ const DEFAULT_PROGRAM = {
      "bonus": 2,
      "muscles": {
       "ischios": 1
-     }
+     },
+     "inc": 2.5
     },
     {
      "id": "mollets",
@@ -392,7 +398,8 @@ const DEFAULT_PROGRAM = {
      "note": "Pause 1 s étiré en bas",
      "muscles": {
       "mollets": 1
-     }
+     },
+     "inc": 2.5
     },
     {
      "id": "crunch",
@@ -406,7 +413,8 @@ const DEFAULT_PROGRAM = {
      "iso": true,
      "muscles": {
       "abdos": 1
-     }
+     },
+     "inc": 2.5
     }
    ]
   },
@@ -444,7 +452,8 @@ const DEFAULT_PROGRAM = {
      "note": "Étirement maximal",
      "muscles": {
       "dos": 1
-     }
+     },
+     "inc": 2.5
     },
     {
      "id": "tractions",
@@ -499,7 +508,8 @@ const DEFAULT_PROGRAM = {
         30
        ]
       }
-     ]
+     ],
+     "inc": 2.5
     },
     {
      "id": "declinehalteres",
@@ -514,7 +524,8 @@ const DEFAULT_PROGRAM = {
      "muscles": {
       "pecs": 1,
       "triceps": 0.5
-     }
+     },
+     "inc": 2
     },
     {
      "id": "lathalteres",
@@ -544,7 +555,8 @@ const DEFAULT_PROGRAM = {
      "muscles": {
       "biceps": 1,
       "avantbras": 0.5
-     }
+     },
+     "inc": 2
     }
    ]
   },
@@ -596,7 +608,8 @@ const DEFAULT_PROGRAM = {
      "iso": true,
      "muscles": {
       "ischios": 1
-     }
+     },
+     "inc": 2.5
     },
     {
      "id": "hipthrust",
@@ -654,7 +667,8 @@ const DEFAULT_PROGRAM = {
      "note": "1re série légère amplitude complète",
      "muscles": {
       "biceps": 1
-     }
+     },
+     "inc": 2.5
     }
    ]
   }

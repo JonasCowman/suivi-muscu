@@ -9,62 +9,79 @@ let P = null; // programme actif ; P.start = date de début effective (profil ou
 
 function setProgram(prog, startOverride) { P = Object.assign({}, prog, { start: startOverride || prog.start }); return P; }
 
-// Vérifie un programme importé. Renvoie la liste des erreurs (vide si valide).
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const isInt = (v, a, b) => Number.isInteger(v) && v >= a && v <= b;
+const isRange = r => Array.isArray(r) && r.length === 2 && isInt(r[0], 1, 100) && isInt(r[1], r[0], 100);
+const isText = v => typeof v === 'string' && !!v.trim();
+const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+// Lettres, chiffres, tirets : les identifiants servent de clés et d'attributs HTML
+const isId = v => typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v) && !(v in {});
+
+// Vérifie un programme importé. Renvoie la liste des erreurs (vide si valide). Ne plante jamais, quel que soit le fichier.
 function validateProgram(p) {
   const err = [];
-  const isInt = (v, a, b) => Number.isInteger(v) && v >= a && v <= b;
-  const isRange = r => Array.isArray(r) && r.length === 2 && isInt(r[0], 1, 100) && isInt(r[1], r[0], 100);
-  if (!p || typeof p !== 'object') return ['Le fichier ne contient pas de programme.'];
+  if (!isObj(p)) return ['Le fichier ne contient pas de programme.'];
+  const optText = (o, keys, w) => keys.forEach(k => { if (o[k] !== undefined && typeof o[k] !== 'string') err.push(`${w} : "${k}" doit être un texte.`); });
   if (p.format !== 'suivi-muscu-programme') err.push('Champ "format" : doit valoir "suivi-muscu-programme".');
-  if (typeof p.name !== 'string' || !p.name.trim()) err.push('Champ "name" : nom du programme manquant.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.start || '') || isNaN(Date.parse(p.start))) err.push('Champ "start" : date de début au format AAAA-MM-JJ.');
+  if (!isText(p.name)) err.push('Champ "name" : nom du programme manquant.');
+  if (!isDate(p.start)) err.push('Champ "start" : date de début au format AAAA-MM-JJ.');
   if (!isInt(p.weeks, 1, 104)) err.push('Champ "weeks" : nombre de semaines entre 1 et 104.');
   const exIds = new Set();
   if (!Array.isArray(p.sessions) || !p.sessions.length) err.push('Champ "sessions" : au moins une séance.');
   else {
     const sIds = new Set();
     p.sessions.forEach((s, i) => {
-      const where = `Séance ${i + 1}${s && s.name ? ` (${s.name})` : ''}`;
-      if (!s || typeof s.id !== 'string' || !s.id) return err.push(`${where} : "id" manquant.`);
+      if (!isObj(s)) return err.push(`Séance ${i + 1} : contenu invalide.`);
+      const where = `Séance ${i + 1}${isText(s.name) ? ` (${s.name})` : ''}`;
+      if (!isId(s.id)) err.push(`${where} : "id" manquant ou invalide (lettres sans accent, chiffres, tirets).`);
       if (sIds.has(s.id)) err.push(`${where} : "id" en double (${s.id}).`);
       sIds.add(s.id);
-      if (typeof s.name !== 'string' || !s.name) err.push(`${where} : "name" manquant.`);
+      if (!isText(s.name)) err.push(`${where} : "name" manquant.`);
+      optText(s, ['focus'], where);
       if (s.dow !== undefined && !isInt(s.dow, 0, 6)) err.push(`${where} : "dow" = jour de 0 (dimanche) à 6 (samedi).`);
       if (!Array.isArray(s.ex) || !s.ex.length) return err.push(`${where} : aucun exercice.`);
+      const inSession = new Set();
       s.ex.forEach((e, j) => {
-        const w = `${where}, exercice ${j + 1}${e && e.n ? ` (${e.n})` : ''}`;
-        if (!e || typeof e.id !== 'string' || !e.id) return err.push(`${w} : "id" manquant.`);
+        if (!isObj(e)) return err.push(`${where}, exercice ${j + 1} : contenu invalide.`);
+        const w = `${where}, exercice ${j + 1}${isText(e.n) ? ` (${e.n})` : ''}`;
+        if (!isId(e.id)) err.push(`${w} : "id" manquant ou invalide (lettres sans accent, chiffres, tirets).`);
+        if (inSession.has(e.id)) err.push(`${w} : "id" en double dans la séance (${e.id}).`);
+        inSession.add(e.id);
         exIds.add(e.id);
-        if (typeof e.n !== 'string' || !e.n) err.push(`${w} : nom "n" manquant.`);
+        if (!isText(e.n)) err.push(`${w} : nom "n" manquant.`);
+        optText(e, ['tempo', 'note'], w);
         if (!isInt(e.s, 1, 10)) err.push(`${w} : "s" = nombre de séries entre 1 et 10.`);
         if (!isRange(e.r)) err.push(`${w} : "r" = fourchette de reps [min, max].`);
         if (!isInt(e.rest, 10, 600)) err.push(`${w} : "rest" = repos en secondes (10 à 600).`);
         if (e.bonus !== undefined && !isInt(e.bonus, 1, (e.s || 1))) err.push(`${w} : "bonus" doit être inférieur ou égal à "s".`);
-        if (!e.muscles || typeof e.muscles !== 'object' || !Object.keys(e.muscles).length) err.push(`${w} : "muscles" manquant.`);
+        if (e.inc !== undefined && !(typeof e.inc === 'number' && e.inc > 0 && e.inc <= 20)) err.push(`${w} : "inc" = hausse de charge en kg (plus de 0, 20 maximum).`);
+        if (!isObj(e.muscles) || !Object.keys(e.muscles).length) err.push(`${w} : "muscles" manquant.`);
         else for (const [m, k] of Object.entries(e.muscles)) {
-          if (!MUSCLES[m]) err.push(`${w} : muscle inconnu "${m}" (possibles : ${Object.keys(MUSCLES).join(', ')}).`);
+          if (!Object.hasOwn(MUSCLES, m)) err.push(`${w} : muscle inconnu "${m}" (possibles : ${Object.keys(MUSCLES).join(', ')}).`);
           if (!(typeof k === 'number' && k > 0 && k <= 1)) err.push(`${w} : coefficient du muscle "${m}" entre 0 et 1.`);
         }
-        (e.ranges || []).forEach(x => { if (!x || !isInt(x.from, 1, 104) || !isRange(x.r)) err.push(`${w} : "ranges" = [{ "from": semaine, "r": [min, max] }].`); });
+        if (e.ranges !== undefined && !(Array.isArray(e.ranges) && e.ranges.every(x => isObj(x) && isInt(x.from, 1, 104) && isRange(x.r)))) err.push(`${w} : "ranges" = [{ "from": semaine, "r": [min, max] }].`);
       });
     });
   }
   if (!Array.isArray(p.mesos) || !p.mesos.length) err.push('Champ "mesos" : au moins un mésocycle.');
-  else if (isInt(p.weeks, 1, 104)) {
+  else if (!p.mesos.every(m => isObj(m) && isInt(m.from, 1, 104) && isInt(m.to, m.from, 104))) err.push(`Mésocycle ${p.mesos.findIndex(m => !(isObj(m) && isInt(m.from, 1, 104) && isInt(m.to, m.from, 104))) + 1} : "from" et "to" = semaines de début et de fin.`);
+  else {
     const sorted = [...p.mesos].sort((a, b) => a.from - b.from);
     let next = 1;
     for (const m of sorted) {
-      const w = `Mésocycle "${m.name || m.id || '?'}"`;
-      if (!isInt(m.from, 1, 104) || !isInt(m.to, m.from, 104)) { err.push(`${w} : "from" et "to" = semaines de début et de fin.`); continue; }
+      const w = `Mésocycle "${isText(m.name) ? m.name : 'S' + m.from}"`;
       if (m.from !== next) err.push(`${w} : commence en semaine ${m.from}, attendu ${next} (pas de trou ni de chevauchement).`);
       next = m.to + 1;
-      if (typeof m.name !== 'string' || !m.name) err.push(`${w} : "name" manquant.`);
-      if (!m.deload && (!isRange(m.bigR) || typeof m.rirBig !== 'string' || typeof m.rirIso !== 'string')) err.push(`${w} : "bigR", "rirBig" et "rirIso" obligatoires (sauf semaine allégée).`);
+      if (!isText(m.name)) err.push(`${w} : "name" manquant.`);
+      optText(m, ['phase', 'kcal'], w);
+      if (!m.deload && (!isRange(m.bigR) || !isText(m.rirBig) || !isText(m.rirIso))) err.push(`${w} : "bigR", "rirBig" et "rirIso" obligatoires (sauf semaine allégée).`);
     }
-    if (next !== p.weeks + 1) err.push(`Les mésocycles doivent couvrir les semaines 1 à ${p.weeks}.`);
-    if (sorted.length && sorted[0].deload) err.push('Le premier mésocycle ne peut pas être une semaine allégée.');
+    if (isInt(p.weeks, 1, 104) && next !== p.weeks + 1) err.push(`Les mésocycles doivent couvrir les semaines 1 à ${p.weeks}.`);
+    if (sorted[0].deload) err.push('Le premier mésocycle ne peut pas être une semaine allégée.');
   }
-  if (p.daily !== undefined && (!p.daily || typeof p.daily.n !== 'string' || !p.daily.n)) err.push('Champ "daily" : { "n": "nom", "detail": "précision" } ou supprime le champ.');
+  if (p.rirWeeks !== undefined && !(isObj(p.rirWeeks) && Object.values(p.rirWeeks).every(isText))) err.push('Champ "rirWeeks" : { "semaine": "RIR" }, RIR entre guillemets.');
+  if (p.daily !== undefined && !(isObj(p.daily) && isText(p.daily.n) && (p.daily.detail === undefined || typeof p.daily.detail === 'string'))) err.push('Champ "daily" : { "n": "nom", "detail": "précision" } ou supprime le champ.');
   if (p.keyLifts !== undefined && !Array.isArray(p.keyLifts)) err.push('Champ "keyLifts" : liste d\'identifiants d\'exercices.');
   for (const id of Array.isArray(p.keyLifts) ? p.keyLifts : []) if (!exIds.has(id)) err.push(`"keyLifts" : exercice "${id}" introuvable dans les séances.`);
   return err;
@@ -81,10 +98,18 @@ function plannedWeekly() {
 
 function dayDiff(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }
 
-// shift = semaines de décalage (fêtes, semaine allégée anticipée)
-function weekOf(dateStr, shift = 0) {
-  const w = Math.floor(dayDiff(P.start, dateStr) / 7) + 1 - shift;
-  return Math.max(1, Math.min(P.weeks, w));
+function addDays(d, n) { return new Date(Date.parse(d) + n * 86400000).toISOString().slice(0, 10); }
+
+// Lundi de la semaine : clé des séances et des bilans, indépendante du programme et du décalage
+function mondayOf(d) { return addDays(d, -((new Date(Date.parse(d)).getUTCDay() + 6) % 7)); }
+
+// Rang de la semaine réelle depuis le début du programme (1 = première, 0 ou moins = avant)
+function weekIndex(d) { return dayDiff(mondayOf(P.start), mondayOf(d)) / 7 + 1; }
+
+// Semaine du programme. shifts = lundis à partir desquels le programme a été décalé d'une semaine.
+function weekOf(d, shifts = []) {
+  const from = mondayOf(P.start), m = mondayOf(d);
+  return Math.max(1, Math.min(P.weeks, weekIndex(d) - shifts.filter(s => s >= from && s <= m).length));
 }
 
 function mesoOf(week) { return P.mesos.find(m => week >= m.from && week <= m.to); }
@@ -94,12 +119,15 @@ function nextDeload(week) { const m = P.mesos.filter(m => m.deload && m.from > w
 // Dernier mésocycle non allégé (pour les fourchettes d'une semaine allégée)
 function workMeso(week) { for (let w = week; w >= 1; w--) { const m = mesoOf(w); if (!m.deload) return m; } return mesoOf(week); }
 
-function rirFor(week, ex) {
+// Semaine allégée, prévue ou anticipée. fatigue = nb de signaux de la semaine précédente
+function isLight(week, fatigue = 0) { return !!mesoOf(week).deload || fatigue >= 3; }
+
+function rirFor(week, ex, fatigue = 0) {
   const m = mesoOf(week);
-  if (m.deload) return '3-4';
+  if (isLight(week, fatigue)) return '3-4';
   if (ex.noFail) return '2-3';
-  if (ex.big || !ex.iso) return (P.rirWeeks || {})[week] || m.rirBig;
-  return m.rirIso;
+  const rir = ex.big || !ex.iso ? (P.rirWeeks || {})[week] || m.rirBig : m.rirIso;
+  return fatigue === 2 && !(parseFloat(rir) >= 2) ? '2' : rir;
 }
 
 function rangeFor(week, ex) {
@@ -108,10 +136,8 @@ function rangeFor(week, ex) {
   return o ? o.r : ex.r;
 }
 
-// fatigue = nb de signaux de la semaine précédente
 function setsFor(week, ex, fatigue = 0) {
-  const m = mesoOf(week);
-  if (m.deload || fatigue >= 3) return Math.ceil(ex.s / 2);
+  if (isLight(week, fatigue)) return Math.ceil(ex.s / 2);
   if (fatigue === 2 && ex.bonus) return ex.s - ex.bonus;
   return ex.s;
 }
@@ -126,13 +152,21 @@ function countSignals(f) {
   return ['perf', 'motiv', 'sleep', 'courb', 'poids'].filter(k => f[k]).length + ((f.pain || 0) > 3 ? 1 : 0);
 }
 
-// Règle +1 rep : sets = [{kg, reps}] de la dernière séance de cet exercice
-function progressionHint(lastSets, range) {
-  const done = (lastSets || []).filter(s => s.kg > 0 && s.reps > 0);
+// Hausse de charge : champ "inc" de l'exercice, sinon 1 kg en isolation et 2,5 kg ailleurs
+function incFor(ex) { return ex.inc || (ex.iso ? 1 : 2.5); }
+
+// Règle +1 rep. sets = dernière séance (hors semaine allégée), need = séries prévues ce jour-là, light = semaine allégée en cours
+function progressionHint(sets, { range, need, inc, light }) {
+  const done = (sets || []).filter(s => s && s.kg >= 0 && s.reps > 0);
   if (!done.length) return { kg: null, text: 'Première fois : bas de fourchette, note ta charge.' };
-  const kg = Math.max(...done.map(s => s.kg));
-  if (done.every(s => s.reps >= range[1])) return { kg: kg + 2.5, text: `Haut de fourchette atteint : ${kg + 2.5} kg, repars à ${range[0]} reps.` };
-  return { kg, text: `Même charge (${kg} kg), +1 rep sur une série.` };
+  const fr = n => String(Math.round(n * 100) / 100).replace('.', ',');
+  const kg = Math.max(...done.map(s => s.kg)), load = kg ? `${fr(kg)} kg` : 'poids du corps';
+  if (light) return { kg, text: `Semaine allégée : même charge (${load}), sans forcer.` };
+  if (done.length >= need && done.every(s => s.kg === kg && s.reps >= range[1])) {
+    const up = kg + inc;
+    return { kg: up, text: `Haut de fourchette atteint : ${fr(up)} kg${kg ? '' : ' de lest'} (ou le cran suivant), repars à ${range[0]} reps.` };
+  }
+  return { kg, text: `Même charge (${load}), +1 rep sur une série.` };
 }
 
 function e1rm(kg, reps) { return kg * (1 + reps / 30); }
@@ -148,4 +182,51 @@ function navyBodyFat(sex, waist, neck, height, hips) {
   return 495 / (1.0324 - 0.19077 * Math.log10(waist - neck) + 0.15456 * Math.log10(height)) - 450;
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, setProgram, validateProgram, exMuscles, plannedWeekly, weekOf, mesoOf, nextDeload, rirFor, rangeFor, setsFor, fatigueAdvice, countSignals, progressionHint, e1rm, navyBodyFat, getProgram: () => P };
+const MESURES = ['poids', 'poitrine', 'taille', 'hanches', 'cuisse', 'bras', 'cou'];
+
+// Met des données enregistrées (ou une sauvegarde) au format actuel sans perdre de séance. null si ce n'est pas une sauvegarde.
+// v1 : séances rangées par numéro de semaine ("3|lundi"), mélangées après un décalage. v2 : par lundi ("2026-12-07|lundi").
+function migrate(d, defaultProgram, today) {
+  if (!isObj(d) || !isObj(d.logs)) return null;
+  const program = d.program && !validateProgram(d.program).length ? d.program : null;
+  const height = Number(d.height) > 0 ? Number(d.height) : 183;
+  let profile = null;
+  if (isObj(d.profile)) {
+    profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null };
+  } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null };
+  const start = () => mondayOf((profile && profile.start) || (program || defaultProgram).start);
+  const weekKey = n => addDays(start(), 7 * (n - 1));
+  let shifts = Array.isArray(d.shifts) ? d.shifts.filter(isDate) : [];
+  if (d.v !== 2 && Number.isInteger(d.shift) && d.shift) {
+    if (d.shift > 0) shifts = Array(Math.min(d.shift, 104)).fill(mondayOf(today || start()));
+    else if (profile) profile.start = addDays(start(), 7 * d.shift);
+  }
+  const logs = {};
+  for (const [k, log] of Object.entries(d.logs)) {
+    const [w, sid] = k.split('|');
+    if (!isObj(log) || !isId(sid)) continue;
+    const ex = {};
+    for (const [id, sets] of Object.entries(isObj(log.ex) ? log.ex : {})) if (Array.isArray(sets) && isId(id)) ex[id] = Array.from(sets, s => (isObj(s) ? s : {}));
+    let key = isDate(w) ? mondayOf(w) : null;
+    if (!key) {
+      if (!(Number(w) > 0) || (!Object.keys(ex).length && !log.done)) continue;
+      key = mondayOf(log.start > 0 ? new Date(log.start).toLocaleDateString('sv-SE') : isDate(log.date) ? log.date : weekKey(+w));
+      while (logs[key + '|' + sid]) key = addDays(key, -7);
+    }
+    logs[key + '|' + sid] = { ...log, ex };
+  }
+  const fatigue = {};
+  for (const [k, f] of Object.entries(isObj(d.fatigue) ? d.fatigue : {})) {
+    if (!isObj(f)) continue;
+    const key = isDate(k) ? mondayOf(k) : isDate(f.date) ? mondayOf(f.date) : /^S\d{1,3}$/.test(k) ? weekKey(+k.slice(1)) : null;
+    if (key) fatigue[key] = { ...f, count: Number(f.count) || 0, pain: Number(f.pain) || 0 };
+  }
+  const mesures = (Array.isArray(d.mesures) ? d.mesures : []).filter(m => isObj(m) && isDate(m.date)).map(m => {
+    const out = { date: m.date };
+    for (const k of MESURES) if (typeof m[k] === 'number' && m[k] > 0) out[k] = m[k];
+    return out;
+  }).filter(m => Object.keys(m).length > 1);
+  return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
+}
+
+if (typeof module !== 'undefined') module.exports = { MUSCLES, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, e1rm, navyBodyFat, getProgram: () => P };
