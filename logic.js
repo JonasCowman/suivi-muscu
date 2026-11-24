@@ -5,6 +5,12 @@ const MUSCLES = {
   quadriceps: 'Quadriceps', ischios: 'Ischios', fessiers: 'Fessiers', mollets: 'Mollets',
 };
 
+// Tags universels des exercices, pour relier les zones suivies aux exercices
+const JOINTS = { epaules: 'Épaules', coudes: 'Coudes', poignets: 'Poignets', lombaires: 'Lombaires', hanches: 'Hanches', genoux: 'Genoux', chevilles: 'Chevilles' };
+const PATTERNS = { poussee: 'Poussée', tirage: 'Tirage', quads: 'Quadriceps', ischios: 'Ischios' };
+const TAGS = Object.fromEntries([...Object.entries(JOINTS).map(([k, l]) => ['joint:' + k, l]), ...Object.entries(PATTERNS).map(([k, l]) => ['pattern:' + k, l])]);
+const exTags = e => [...(e.joints || []).map(k => 'joint:' + k), ...(e.patterns || []).map(k => 'pattern:' + k)];
+
 let P = null; // programme actif ; P.start = date de début effective (profil ou programme)
 
 function setProgram(prog, startOverride) { P = Object.assign({}, prog, { start: startOverride || prog.start }); return P; }
@@ -54,6 +60,7 @@ function validateProgram(p) {
         if (!isRange(e.r)) err.push(`${w} : "r" = fourchette de reps [min, max].`);
         if (!isInt(e.rest, 10, 600)) err.push(`${w} : "rest" = repos en secondes (10 à 600).`);
         if (e.bonus !== undefined && !isInt(e.bonus, 1, (e.s || 1))) err.push(`${w} : "bonus" doit être inférieur ou égal à "s".`);
+        for (const [k, list] of [['joints', JOINTS], ['patterns', PATTERNS]]) if (e[k] !== undefined && !(Array.isArray(e[k]) && e[k].every(x => Object.hasOwn(list, x)))) err.push(`${w} : "${k}" = liste parmi ${Object.keys(list).join(', ')}.`);
         if (e.cat !== undefined && e.cat !== 'postural') err.push(`${w} : "cat" = "postural" ou supprime le champ.`);
         if (e.inc !== undefined && !(typeof e.inc === 'number' && e.inc > 0 && e.inc <= 20)) err.push(`${w} : "inc" = hausse de charge en kg (plus de 0, 20 maximum).`);
         if (!isObj(e.muscles) || !Object.keys(e.muscles).length) err.push(`${w} : "muscles" manquant.`);
@@ -277,12 +284,21 @@ function cleanSet(s) {
   return stop === true ? { ...rest, stop } : isRir(rir) ? { ...rest, rir } : rest;
 }
 
-// Zones du check-in articulaire (PRD). Niveaux : 0 rien, 1 gêne, 2 douleur ; zone sans réponse : absente
-const JOINTS = { shoulders: 'Épaules', elbows: 'Coudes', knees: 'Genoux', lower_back: 'Lombaires', nerve: 'Asymétrie / blocage nerveux' };
-const cleanZones = v => Object.keys(JOINTS).filter(z => Array.isArray(v) && v.includes(z));
-function cleanJoints(v) {
+// Zones suivies du profil : { id, label, tags }, tags parmi TAGS
+function cleanZones(v) {
+  const out = [];
+  for (const z of Array.isArray(v) ? v : []) {
+    if (!isObj(z) || !isId(z.id) || !isText(z.label) || !Array.isArray(z.tags) || out.some(o => o.id === z.id)) continue;
+    const tags = Object.keys(TAGS).filter(t => z.tags.includes(t));
+    if (tags.length) out.push({ id: z.id, label: z.label.trim().slice(0, 30), tags });
+  }
+  return out;
+}
+
+// Check-in d'une séance : { zone: 0 rien, 1 gêne, 2 douleur } ; zone sans réponse : absente
+function cleanCheckin(v) {
   const out = {};
-  for (const z of Object.keys(JOINTS)) if (isObj(v) && isInt(v[z], 0, 2)) out[z] = v[z];
+  for (const [id, n] of Object.entries(isObj(v) ? v : {})) if (isId(id) && isInt(n, 0, 2)) out[id] = n;
   return out;
 }
 
@@ -301,8 +317,8 @@ function migrate(d, defaultProgram, today) {
   const height = Number(d.height) > 0 ? Number(d.height) : 183;
   let profile = null;
   if (isObj(d.profile)) {
-    profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null, zones: cleanZones(d.profile.zones) };
-  } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null, zones: [] };
+    profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null, trackedZones: cleanZones(d.profile.trackedZones) };
+  } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null, trackedZones: [] };
   const start = () => mondayOf((profile && profile.start) || (program || defaultProgram).start);
   const weekKey = n => addDays(start(), 7 * (n - 1));
   let shifts = Array.isArray(d.shifts) ? d.shifts.filter(isDate) : [];
@@ -322,7 +338,7 @@ function migrate(d, defaultProgram, today) {
       key = mondayOf(log.start > 0 ? new Date(log.start).toLocaleDateString('sv-SE') : isDate(log.date) ? log.date : weekKey(+w));
       while (logs[key + '|' + sid]) key = addDays(key, -7);
     }
-    logs[key + '|' + sid] = { ...log, ex, ...('warm' in log && { warm: cleanWarm(log.warm) }), ...('joints' in log && { joints: cleanJoints(log.joints) }) };
+    logs[key + '|' + sid] = { ...log, ex, ...('warm' in log && { warm: cleanWarm(log.warm) }), ...('checkin' in log && { checkin: cleanCheckin(log.checkin) }) };
   }
   const fatigue = {};
   for (const [k, f] of Object.entries(isObj(d.fatigue) ? d.fatigue : {})) {
@@ -338,4 +354,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, JOINTS, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, e1rm, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };

@@ -1,6 +1,6 @@
 // Interface. Données stockées uniquement sur l'appareil (localStorage).
 const KEY = 'muscu-v1';
-// profile = { prenom, sexe: 'h' | 'f', taille, start, zones } ; program = programme importé (null = programme par défaut)
+// profile = { prenom, sexe: 'h' | 'f', taille, start, trackedZones } ; program = programme importé (null = programme par défaut)
 // logs et fatigue : rangés par lundi de la semaine ("2026-11-23|lundi") ; shifts : lundis où le programme a été décalé
 const blank = () => ({ v: 2, logs: {}, daily: {}, fatigue: {}, mesures: [], shifts: [], profile: null, program: null });
 const today = () => new Date().toLocaleDateString('sv-SE');
@@ -18,7 +18,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 const applyProgram = () => setProgram(db.program || DEFAULT_PROGRAM, db.profile && db.profile.start);
 applyProgram();
 
-const ui = { tab: 'dash', sid: null, open: null, focus: false, chartEx: null, err: {}, rest: null, restEnd: 0, progErr: [], setup: {}, profDraft: null };
+const ui = { tab: 'dash', sid: null, open: null, focus: false, chartEx: null, err: {}, rest: null, restEnd: 0, progErr: [], setup: {}, profDraft: null, zone: { label: '', tags: [] } };
 const sex = () => (db.profile && db.profile.sexe) || 'h';
 const frDate = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const shiftCount = () => db.shifts.filter(s => s >= mondayOf(P.start)).length;
@@ -105,11 +105,11 @@ function sessionState() {
 
 const mmss = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 
-// Check-in articulaire d'une séance terminée, pour les zones cochées dans Profile
+// Check-in articulaire d'une séance terminée, pour les zones suivies du profil
 function viewJoints(log) {
-  const zones = db.profile.zones || [], v = log.joints || {};
+  const zones = db.profile.trackedZones || [], v = log.checkin || {};
   if (!log.done || !zones.length) return '';
-  return `<div class="card"><div class="disp">Check-in articulaire</div><div class="mut">Facultatif. Enregistré dès que tu touches.</div>${zones.map(z => `<div style="margin-top:12px">${JOINTS[z]}</div><div class="lvls" role="group" aria-label="${JOINTS[z]}">${['Rien', 'Gêne', 'Douleur'].map((l, i) => `<button class="lvl${i} ${v[z] === i ? 'on' : ''}" data-a="joint" data-z="${z}" data-v="${i}" aria-pressed="${v[z] === i}">${v[z] === i ? '✓ ' : ''}${l}</button>`).join('')}</div>`).join('')}</div>`;
+  return `<div class="card"><div class="disp">Check-in articulaire</div><div class="mut">Facultatif. Enregistré dès que tu touches.</div>${zones.map(z => `<div style="margin-top:12px">${esc(z.label)}</div><div class="lvls" role="group" aria-label="${esc(z.label)}">${['Rien', 'Gêne', 'Douleur'].map((l, n) => `<button class="lvl${n} ${v[z.id] === n ? 'on' : ''}" data-a="checkin" data-z="${z.id}" data-v="${n}" aria-pressed="${v[z.id] === n}">${v[z.id] === n ? '✓ ' : ''}${l}</button>`).join('')}</div>`).join('')}</div>`;
 }
 
 // Vue d'ensemble de la séance : un exercice par ligne, on touche pour ouvrir la page séance
@@ -357,11 +357,15 @@ function profileFields(pr, k) {
   <div class="mut" style="font-size:12px">Les semaines vont du lundi au dimanche. Vide = ${esc(frDate(defaultStart(k)))}.</div>`;
 }
 
-// Zones à suivre au check-in articulaire (Profile seulement)
-function zoneFields(pr) {
-  const on = pr.zones || [];
-  return `<div class="mut" style="margin-top:14px">Zones à surveiller après chaque séance (facultatif)</div><div class="zones" role="group" aria-label="Zones à surveiller">${Object.entries(JOINTS).map(([z, l]) => `<button class="${on.includes(z) ? 'on-sel' : ''}" data-a="zone" data-z="${z}" aria-pressed="${on.includes(z)}">${on.includes(z) ? '✓ ' : ''}${l}</button>`).join('')}</div>
-  <div class="mut" style="margin-top:6px">Ce sont des données de santé : elles restent sur ce téléphone et dans tes fichiers exportés.</div>`;
+// Zones suivies au check-in (Profile). Enregistrées aussitôt, sans passer par le brouillon du profil
+function viewZones() {
+  const f = ui.zone, zones = db.profile.trackedZones || [];
+  let h = `<h2>Zones suivies</h2><div class="card"><div class="mut">Facultatif. Demandées après chaque séance. Ce sont des données de santé : elles restent sur ce téléphone et dans tes fichiers exportés.</div>`;
+  if (!P.sessions.some(s => s.ex.some(e => exTags(e).length))) h += `<div class="banner mid" style="margin:10px 0 0">Ce programme n'a pas de tags : aucune zone ne peut agir sur ses exercices.</div>`;
+  h += zones.map(z => `<div class="row" style="margin-top:10px"><div><div>${esc(z.label)}</div><div class="mut">${z.tags.map(t => TAGS[t]).join(', ')}</div></div><button data-a="zone-del" data-z="${z.id}" aria-label="Supprimer ${esc(z.label)}" style="min-height:44px">Supprimer</button></div>`).join('');
+  h += `<label class="mut" style="display:block;margin-top:14px">Nom de la nouvelle zone<input type="text" maxlength="30" data-zl value="${esc(f.label)}" style="width:100%;min-height:44px;font:inherit;font-size:17px;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px"></label>`;
+  h += `<div class="mut" style="margin-top:10px">Articulations et mouvements concernés</div><div class="zones" role="group" aria-label="Articulations et mouvements concernés">${Object.entries(TAGS).map(([t, l]) => `<button class="${f.tags.includes(t) ? 'on-sel' : ''}" data-a="zone-tag" data-tag="${t}" aria-pressed="${f.tags.includes(t)}">${f.tags.includes(t) ? '✓ ' : ''}${l}</button>`).join('')}</div>`;
+  return h + `<div class="err" role="alert">${esc(ui.err.zone || '')}</div><button class="primary" style="width:100%;margin-top:10px" data-a="zone-add">Ajouter la zone</button></div>`;
 }
 
 const progStart = () => (db.program || DEFAULT_PROGRAM).start;
@@ -372,7 +376,7 @@ function readProfile(d, k) {
   const taille = +d.taille, start = d.start || null;
   if (!d.sexe) return { error: 'Choisis Homme ou Femme.' };
   if (!(taille >= 120 && taille <= 230)) return { error: 'Indique ta taille en cm (entre 120 et 230).' };
-  return { prenom: String(d.prenom || '').trim().slice(0, 40), sexe: d.sexe, taille, start: start || (k === 's' ? defaultStart('s') : null), zones: cleanZones(d.zones) };
+  return { prenom: String(d.prenom || '').trim().slice(0, 40), sexe: d.sexe, taille, start: start || (k === 's' ? defaultStart('s') : null) };
 }
 
 function viewProgramCard() {
@@ -406,7 +410,8 @@ function viewProf() {
   const nLogs = Object.values(db.logs).filter(l => l.done).length;
   const pr = db.profile;
   return `<h1>Profile</h1><div class="mut" style="margin-bottom:14px">${nLogs} séance${nLogs > 1 ? 's' : ''} terminée${nLogs > 1 ? 's' : ''} · début le ${esc(frDate(P.start))}</div>
-  <h2>Mon profil</h2><div class="card">${profileFields(ui.profDraft || pr, 'p')}${zoneFields(ui.profDraft || pr)}${ui.err.prof ? `<div class="err">${esc(ui.err.prof)}</div>` : ''}<button class="primary" style="width:100%;margin-top:10px" data-a="prof-save">Enregistrer le profil</button></div>
+  <h2>Mon profil</h2><div class="card">${profileFields(ui.profDraft || pr, 'p')}${ui.err.prof ? `<div class="err">${esc(ui.err.prof)}</div>` : ''}<button class="primary" style="width:100%;margin-top:10px" data-a="prof-save">Enregistrer le profil</button></div>
+  ${viewZones()}
   ${viewProgramCard()}
   <h2>Calendrier</h2><div class="card"><div class="row"><span>Décalage</span><b>${shiftCount()} semaine${shiftCount() > 1 ? 's' : ''}</b></div><div class="mut" style="margin:6px 0 10px">Après des séances ratées (fêtes) ou une semaine allégée anticipée, décale d'une semaine : le programme reprend la semaine précédente, tes séances déjà faites ne bougent pas.</div><div class="row"><button data-a="shift" data-d="-1" style="flex:1">Annuler le dernier</button><button data-a="shift" data-d="1" style="flex:1">+ 1 semaine</button></div></div>
   <h2>Sauvegarde</h2><div class="card"><div class="mut" style="margin-bottom:10px">Tes données restent sur ce téléphone. Exporte-les chaque semaine : si l'appli est supprimée, elles sont perdues.</div><div class="row"><button data-a="export" style="flex:1">Exporter</button><button style="flex:1" data-a="import-btn">Importer</button><input type="file" accept="application/json" id="importFile" hidden></div>${ui.err.imp ? `<div class="err">${esc(ui.err.imp)}</div>` : ''}</div>
@@ -482,13 +487,26 @@ document.addEventListener('click', ev => {
     else if (shiftCount()) { db.shifts.sort(); db.shifts.pop(); }
     save(); render();
   }
-  else if (a === 'zone') {
-    const d = draft('p'), z = t.dataset.z, on = d.zones || [];
-    d.zones = cleanZones(on.includes(z) ? on.filter(x => x !== z) : [...on, z]); render();
+  else if (a === 'zone-tag') {
+    const f = ui.zone, tag = t.dataset.tag;
+    f.tags = f.tags.includes(tag) ? f.tags.filter(x => x !== tag) : [...f.tags, tag]; render();
   }
-  else if (a === 'joint') {
-    const l = logFor(key, ui.sid), j = l.joints || (l.joints = {}), z = t.dataset.z, v = +t.dataset.v;
-    if (j[z] === v) delete j[z]; else j[z] = v;
+  else if (a === 'zone-add') {
+    const f = ui.zone;
+    ui.err.zone = !f.label.trim() ? 'Donne un nom à la zone.' : !f.tags.length ? 'Choisis au moins une articulation ou un mouvement.' : '';
+    if (!ui.err.zone) {
+      // Identifiant jamais réutilisé : les anciennes réponses d'une zone supprimée ne passent pas à une autre
+      db.profile.trackedZones = cleanZones([...(db.profile.trackedZones || []), { id: 'z' + Date.now().toString(36), label: f.label, tags: f.tags }]);
+      ui.zone = { label: '', tags: [] }; save();
+    }
+    render();
+  }
+  else if (a === 'zone-del' && confirm('Supprimer cette zone ? Ses anciennes réponses n\'agiront plus sur tes exercices.')) {
+    db.profile.trackedZones = db.profile.trackedZones.filter(z => z.id !== t.dataset.z); save(); render();
+  }
+  else if (a === 'checkin') {
+    const l = logFor(key, ui.sid), c = l.checkin || (l.checkin = {}), z = t.dataset.z, v = +t.dataset.v;
+    if (c[z] === v) delete c[z]; else c[z] = v;
     save(); render();
   }
   else if (a === 'pick-sex') {
@@ -497,12 +515,12 @@ document.addEventListener('click', ev => {
   else if (a === 'setup-save') {
     const p = readProfile(ui.setup, 's');
     if (p.error) { ui.err.setup = p.error; return render(); }
-    delete ui.err.setup; db.profile = p; ui.setup = {}; ui.progErr = []; ui.progOk = ''; save(); applyProgram(); ui.tab = 'dash'; render();
+    delete ui.err.setup; db.profile = { ...p, trackedZones: [] }; ui.setup = {}; ui.progErr = []; ui.progOk = ''; save(); applyProgram(); ui.tab = 'dash'; render();
   }
   else if (a === 'prof-save') {
     const p = readProfile(ui.profDraft || db.profile, 'p');
     if (p.error) { ui.err.prof = p.error; return render(); }
-    delete ui.err.prof; db.profile = p; ui.profDraft = null; save(); applyProgram(); render();
+    delete ui.err.prof; db.profile = { ...p, trackedZones: db.profile.trackedZones }; ui.profDraft = null; save(); applyProgram(); render();
   }
   else if (a === 'prog-export') downloadJson(db.program || DEFAULT_PROGRAM, 'programme-modele.json');
   else if (a === 'prog-import') $('#progFile').click();
@@ -511,7 +529,7 @@ document.addEventListener('click', ev => {
   }
   else if (a === 'export') downloadJson(db, `muscu-${today()}.json`);
   else if (a === 'import-btn') $('#importFile').click();
-  else if (a === 'reset' && confirm('Effacer ton profil, ton programme importé, tes séances, bilans et mesures ? Cette action est définitive. Exporte d\'abord si besoin.')) { db = blank(); save(); applyProgram(); ui.tab = 'dash'; ui.sid = null; ui.focus = false; ui.setup = {}; ui.profDraft = null; render(); }
+  else if (a === 'reset' && confirm('Effacer ton profil, ton programme importé, tes séances, bilans et mesures ? Cette action est définitive. Exporte d\'abord si besoin.')) { db = blank(); save(); applyProgram(); ui.tab = 'dash'; ui.sid = null; ui.focus = false; ui.setup = {}; ui.profDraft = null; ui.zone = { label: '', tags: [] }; render(); }
 });
 
 document.addEventListener('input', ev => {
@@ -523,7 +541,8 @@ document.addEventListener('input', ev => {
       const e = sessionState().exs.find(v => v.id === i.dataset.ex), kg = x.kg ?? hintFor(e, ui.sid).kg;
       document.querySelectorAll('[data-wpct]').forEach(c => { c.innerHTML = warmLoad(e, kg, +c.dataset.wpct); });
     }
-  } else if (i.dataset.s) draft('s')[i.dataset.s] = i.value;
+  } else if ('zl' in i.dataset) ui.zone.label = i.value;
+  else if (i.dataset.s) draft('s')[i.dataset.s] = i.value;
   else if (i.dataset.p) draft('p')[i.dataset.p] = i.value;
   else if (i.dataset.fat === 'pain') $('#painV').textContent = i.value + ' / 10';
 });

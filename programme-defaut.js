@@ -137,6 +137,7 @@ const DEFAULT_PROGRAM = {
    "ex": [
     {
      "id": "oiseau",
+     "joints": ["epaules"],
      "n": "Oiseau haltères banc incliné",
      "s": 2,
      "r": [
@@ -153,6 +154,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "pecfly",
+     "joints": ["epaules"],
+     "patterns": ["poussee"],
      "n": "Pec fly machine",
      "s": 2,
      "r": [
@@ -179,6 +182,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "decline",
+     "joints": ["epaules", "coudes", "poignets"],
+     "patterns": ["poussee"],
      "n": "Développé décliné convergent",
      "s": 3,
      "r": [
@@ -196,6 +201,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "chestpress",
+     "joints": ["epaules", "coudes", "poignets"],
+     "patterns": ["poussee"],
      "n": "Chest press convergent prise neutre",
      "s": 3,
      "r": [
@@ -212,6 +219,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "ecarte",
+     "joints": ["epaules", "coudes"],
+     "patterns": ["poussee"],
      "n": "Écarté décliné haltères",
      "s": 2,
      "r": [
@@ -237,6 +246,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "tirageneutre",
+     "joints": ["epaules", "coudes"],
+     "patterns": ["tirage"],
      "n": "Tirage vertical prise neutre serrée",
      "s": 4,
      "r": [
@@ -253,6 +264,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "latpoulie",
+     "joints": ["epaules"],
      "n": "Élévation latérale unilatérale poulie basse",
      "s": 3,
      "r": [
@@ -268,6 +280,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "triceps",
+     "joints": ["coudes"],
+     "patterns": ["poussee"],
      "n": "Extension triceps corde poulie haute",
      "s": 3,
      "r": [
@@ -293,6 +307,7 @@ const DEFAULT_PROGRAM = {
    "ex": [
     {
      "id": "oiseau",
+     "joints": ["epaules"],
      "n": "Oiseau haltères",
      "s": 2,
      "r": [
@@ -309,6 +324,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "legcurlallonge",
+     "joints": ["genoux"],
+     "patterns": ["ischios"],
      "n": "Leg curl allongé",
      "s": 3,
      "r": [
@@ -325,6 +342,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "legext",
+     "joints": ["genoux"],
+     "patterns": ["quads"],
      "n": "Leg extension (activation)",
      "s": 2,
      "r": [
@@ -342,6 +361,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "hack",
+     "joints": ["genoux", "hanches"],
+     "patterns": ["quads"],
      "n": "Hack squat",
      "s": 3,
      "r": [
@@ -359,6 +380,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "presse",
+     "joints": ["genoux", "hanches"],
+     "patterns": ["quads"],
      "n": "Presse à 45°",
      "s": 3,
      "r": [
@@ -375,6 +398,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "legcurlassis",
+     "joints": ["genoux"],
+     "patterns": ["ischios"],
      "n": "Leg curl assis",
      "s": 2,
      "r": [
@@ -391,6 +416,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "mollets",
+     "joints": ["chevilles"],
      "n": "Mollets debout",
      "s": 3,
      "r": [
@@ -407,6 +433,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "crunch",
+     "joints": ["lombaires"],
      "n": "Crunch à la poulie",
      "s": 2,
      "r": [
@@ -430,6 +457,7 @@ const DEFAULT_PROGRAM = {
    "ex": [
     {
      "id": "oiseau",
+     "joints": ["epaules"],
      "n": "Oiseau haltères banc incliné",
      "s": 2,
      "r": [
@@ -446,6 +474,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "pullover",
+     "joints": ["epaules"],
+     "patterns": ["tirage"],
      "n": "Pull-over à la poulie",
      "s": 2,
      "r": [
@@ -462,6 +492,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "tractions",
+     "joints": ["epaules", "coudes"],
+     "patterns": ["tirage"],
      "n": "Tractions / tirage vertical prise large",
      "s": 3,
      "r": [
@@ -477,6 +509,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "tirage45",
+     "joints": ["epaules", "coudes"],
+     "patterns": ["tirage"],
      "n": "Tirage unilatéral 45-60°",
      "s": 4,
      "r": [
@@ -493,6 +527,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "pecfly",
+     "joints": ["epaules"],
+     "patterns": ["poussee"],
      "n": "Pec fly machine (rappel)",
      "s": 2,
      "r": [
@@ -518,6 +554,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "declinehalteres",
+     "joints": ["epaules", "coudes", "poignets"],
+     "patterns": ["poussee"],
      "n": "Développé décliné haltères prise neutre",
      "s": 2,
      "r": [
@@ -534,6 +572,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "lathalteres",
+     "joints": ["epaules"],
      "n": "Élévation latérale haltères",
      "s": 4,
      "r": [
@@ -548,6 +587,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "marteau",
+     "joints": ["coudes", "poignets"],
      "n": "Curl marteau",
      "s": 3,
      "r": [
@@ -573,6 +613,7 @@ const DEFAULT_PROGRAM = {
    "ex": [
     {
      "id": "oiseau",
+     "joints": ["epaules"],
      "n": "Oiseau haltères",
      "s": 2,
      "r": [
@@ -588,6 +629,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "sdjt",
+     "joints": ["lombaires", "hanches"],
+     "patterns": ["ischios"],
      "n": "Soulevé de terre jambes tendues",
      "s": 3,
      "r": [
@@ -605,6 +648,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "legcurldebout",
+     "joints": ["genoux"],
+     "patterns": ["ischios"],
      "n": "Leg curl debout unilatéral",
      "s": 3,
      "r": [
@@ -620,6 +665,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "hipthrust",
+     "joints": ["hanches", "lombaires"],
      "n": "Hip thrust",
      "s": 3,
      "r": [
@@ -635,6 +681,8 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "split",
+     "joints": ["genoux", "hanches"],
+     "patterns": ["quads"],
      "n": "Split squat",
      "s": 3,
      "r": [
@@ -650,6 +698,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "latpoulie",
+     "joints": ["epaules"],
      "n": "Élévation latérale unilatérale poulie basse",
      "s": 3,
      "r": [
@@ -664,6 +713,7 @@ const DEFAULT_PROGRAM = {
     },
     {
      "id": "curlpoulie",
+     "joints": ["coudes", "poignets"],
      "n": "Curl biceps poulie",
      "s": 2,
      "r": [

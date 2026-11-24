@@ -76,5 +76,7 @@ Ils doivent couvrir toutes les semaines, de 1 à `weeks`, sans trou ni chevauche
 | `ranges` | Change la fourchette à partir d'une semaine donnée |
 | `tempo`, `note` | Affichés sur la page séance |
 | `muscles` | Muscles travaillés : 1 = principal, 0.5 = secondaire |
+| `joints` | Articulations sollicitées (facultatif) : `epaules`, `coudes`, `poignets`, `lombaires`, `hanches`, `genoux`, `chevilles` |
+| `patterns` | Mouvements (facultatif) : `poussee`, `tirage`, `quads`, `ischios`. Sans `joints` ni `patterns`, le mode protection ne s'applique jamais à l'exercice |
 
 Muscles possibles : `pecs`, `epaules_lat`, `epaules_post`, `dos`, `biceps`, `triceps`, `avantbras`, `abdos`, `quadriceps`, `ischios`, `fessiers`, `mollets`.
