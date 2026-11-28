@@ -72,7 +72,24 @@ function sessionDone(key, sid) { return !!(db.logs[key + '|' + sid] || {}).done;
 function plannedSets(key, ex) { return setsFor(progWeek(key), ex, prevFatigue(key)); }
 
 // ---------- Dashboard ----------
+// Semaine suivante, en lecture seule : programme prévu, allégée si le bilan de cette semaine le demande
+function viewNextWeek() {
+  const back = `<button class="ghost" style="width:100%;min-height:44px" data-a="peek" data-v="0">‹ Semaine en cours</button>`;
+  const key = addDays(wk(), 7), from = key < mondayOf(P.start) ? mondayOf(P.start) : key;
+  if (db.next && db.next.start <= addDays(key, 6)) return `${back}<h1>Semaine prochaine</h1><div class="banner info">Ton nouveau cycle « ${esc(db.next.name)} » commence le ${esc(frDate(db.next.start))}, en semaine 1.</div>`;
+  if (cycleState(from, db.shifts) === 'over') return `${back}<h1>Semaine prochaine</h1><div class="banner info">Le programme sera terminé. ${P.generated ? 'Prépare un nouveau cycle depuis le Dashboard.' : ''}</div>`;
+  const w = progWeek(from), m = mesoOf(w), f = prevFatigue(from);
+  let h = `${back}<h1>Semaine ${w} · ${esc(m.name)}</h1><div class="mut" style="margin-bottom:12px">Du ${esc(frDate(from))} au ${esc(frDate(addDays(from, 6)))}. Aperçu : rien ne s'enregistre ici.</div>`;
+  if (m.deload) h += `<div class="banner info">Semaine allégée : moitié des séries, mêmes charges, RIR ${esc(P.rirLight || '3-4')}.</div>`;
+  else if (f >= 3) h += `<div class="banner high">Semaine allégée anticipée (bilan fatigue : ${f} signaux) : moitié des séries, mêmes charges.</div>`;
+  else if (f === 2) h += `<div class="banner mid">Bilan fatigue : 2 signaux. Séries bonus retirées, RIR 2 au moins.</div>`;
+  else if (!db.fatigue[wk()] && key > mondayOf(P.start)) h += `<div class="banner info">Bilan de fatigue pas encore fait : la semaine peut encore devenir allégée.</div>`;
+  for (const s of P.sessions) h += `<h2>${esc(s.name)}</h2><div class="card">${s.ex.map(e => { const rr = rangeFor(w, e); return `<div class="row" style="padding:5px 0"><span>${esc(e.n)}</span><span class="mut" style="white-space:nowrap">${setsFor(w, e, f)} × ${rr[0]}-${rr[1]} · RIR ${esc(rirFor(w, e, f))}</span></div>`; }).join('')}</div>`;
+  return h + back;
+}
+
 function viewDash() {
+  if (ui.peek) return viewNextWeek();
   const key = wk(), w = week(), m = mesoOf(w), f = prevFatigue(key), t = today();
   const adv = fatigueAdvice(f), nd = nextDeload(w);
   const notStarted = t < P.start;
@@ -99,6 +116,7 @@ function viewDash() {
     const done = sessionDone(key, s.id);
     h += `<div class="card row" data-a="open-session" data-sid="${s.id}" style="cursor:pointer"><span class="dot ${done ? 'done' : ''}"></span><div style="flex:1"><div>${esc(s.name)}</div><div class="mut">${done ? 'Faite' : esc(s.focus || '')}</div></div><span class="chev">›</span></div>`;
   }
+  h += `<button style="width:100%;min-height:44px;margin-top:12px" data-a="peek" data-v="1">Voir la semaine prochaine ›</button>`;
   h += `<div class="mut" style="margin-top:12px">${nd ? `Prochaine semaine allégée : S${nd}` : `Plus de semaine allégée prévue · fin du programme en S${P.weeks}.`}</div>`;
   return h;
 }
@@ -539,7 +557,7 @@ document.addEventListener('click', ev => {
   const t = ev.target.closest('[data-tab],[data-a]');
   unlockAudio();
   if (!t) return;
-  if (t.dataset.tab) { ui.profDraft = null; ui.gen = null; ui.tab = t.dataset.tab; window.scrollTo(0, 0); return render(); }
+  if (t.dataset.tab) { ui.profDraft = null; ui.gen = null; ui.peek = false; ui.tab = t.dataset.tab; window.scrollTo(0, 0); return render(); }
   const a = t.dataset.a, key = wk();
   if (a === 'oiseau') { const d = db.daily[today()] || (db.daily[today()] = {}); d.oiseau = !d.oiseau; save(); render(); }
   else if (a === 'open-session' || a === 'pick') { ui.sid = t.dataset.sid; ui.open = null; ui.focus = false; ui.tab = 'work'; window.scrollTo(0, 0); render(); }
@@ -563,6 +581,7 @@ document.addEventListener('click', ev => {
   else if (a === 'finish') { const l = logFor(key, ui.sid); l.done = !l.done; l.date = today(); save(); render(); if (l.done) window.scrollTo(0, 0); }
   else if (a === 'rest-add' && ui.rest) { ui.rest.end += 30000; ui.rest.total += 30; tick(); }
   else if (a === 'rest-skip') { ui.rest = null; tick(); }
+  else if (a === 'peek') { ui.peek = t.dataset.v === '1'; render(); window.scrollTo(0, 0); }
   else if (a === 'go-fatigue') { ui.tab = 'stats'; render(); $('#fatigue').scrollIntoView(); }
   else if (a === 'fat-save') {
     const f = { date: today() };
