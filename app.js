@@ -14,7 +14,10 @@ if (raw) {
   try { old = JSON.parse(raw); } catch {}
   // Copie de sécurité de l'ancien format (ou d'un fichier illisible) avant toute réécriture
   if ((!old || old.v !== 2) && !localStorage.getItem(KEY + '-copie')) localStorage.setItem(KEY + '-copie', raw);
-  db = migrate(old, DEFAULT_PROGRAM, today()) || db;
+  let d = null;
+  try { d = migrate(old, DEFAULT_PROGRAM, today()); } catch {}
+  // Données présentes mais illisibles : gardées de côté, jamais écrasées par un nouveau profil ou une restauration
+  if (d) db = d; else if (!localStorage.getItem(KEY + '-secours')) localStorage.setItem(KEY + '-secours', raw);
 }
 const save = () => localStorage.setItem(KEY, JSON.stringify(db));
 if (raw && db.program && !JSON.parse(raw).program) save(); // programme figé par migrate() : enregistré avant toute mise à jour de l'appli
@@ -501,7 +504,8 @@ function showGen() { render(); window.scrollTo(0, 0); $('#view h1').focus(); }
 // Premier lancement : création du profil
 function viewSetup() {
   const s = ui.setup;
-  return `<h1>Bienvenue</h1><div class="mut" style="margin-bottom:14px">Crée ton profil. Tes données restent sur ce téléphone.</div>
+  const lost = localStorage.getItem(KEY + '-secours') ? `<div class="banner high">Des données enregistrées sur ce téléphone n'ont pas pu être lues. Elles sont gardées de côté, rien ne les efface.<button style="width:100%;min-height:44px;margin-top:8px" data-a="secours">Télécharger ces données</button></div>` : '';
+  return `<h1>Bienvenue</h1>${lost}<div class="mut" style="margin-bottom:14px">Crée ton profil. Tes données restent sur ce téléphone.</div>
   <div class="card">${profileFields(s, 's')}</div>
   ${viewProgramCard()}
   ${ui.err.setup ? `<div class="err">${esc(ui.err.setup)}</div>` : ''}
@@ -672,6 +676,7 @@ document.addEventListener('click', ev => {
     ui.progOk = `Programme « ${P.name} » créé · début le ${frDate(P.start)}${db.profile ? `, semaine ${week()}` : ''}.`; ui.progErr = []; render(); window.scrollTo(0, 0);
   }
   else if (a === 'export') downloadJson(db, `muscu-${today()}.json`);
+  else if (a === 'secours') { const url = URL.createObjectURL(new Blob([localStorage.getItem(KEY + '-secours')], { type: 'application/json' })), l = document.createElement('a'); l.href = url; l.download = `muscu-secours-${today()}.json`; l.click(); URL.revokeObjectURL(url); }
   else if (a === 'import-btn') $('#importFile').click();
   else if (a === 'reset' && confirm('Effacer ton profil, tes programmes, tes séances, bilans et mesures ? Cette action est définitive. Exporte d\'abord si besoin.')) { db = blank(); save(); applyProgram(); ui.tab = 'dash'; ui.sid = null; ui.focus = false; ui.setup = {}; ui.genSaved = null; ui.progOk = ''; ui.profDraft = null; ui.zone = { label: '', tags: [] }; render(); }
 });
