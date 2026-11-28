@@ -81,6 +81,12 @@ label.chk input{width:22px;height:22px;accent-color:var(--cyan)}
 .gen h1:focus{outline:none}
 .gen button{min-height:44px}
 .gen :focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.mq{border:0;margin:0;padding:10px 0;border-top:1px solid var(--line)}.mq legend{padding:0;font-weight:600}
+.seg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.seg label{flex:1 1 30%;min-height:44px;display:flex;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;padding:4px 6px;cursor:pointer;position:relative}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg label:has(input:checked){border-color:var(--cyan);color:var(--cyan);font-weight:600}.seg label:has(input:checked) span::before{content:'✓ '}
+.seg label:has(input:focus-visible){outline:2px solid var(--cyan);outline-offset:2px}
 .err{color:var(--danger);font-size:13px;margin-top:6px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .metric{background:var(--card2);border-radius:10px;padding:10px}

@@ -28,6 +28,7 @@ Un programme est un fichier JSON. Le plus simple : dans l'appli, onglet **Profil
 | `daily` | non | Tâche quotidienne cochable sur le Dashboard (supprime le champ si inutile) |
 | `keyLifts` | non | Identifiants des exercices suivis dans « Objectifs de charge » |
 | `rirLight` | non | RIR affiché les semaines allégées (texte, par défaut `"3-4"`) |
+| `advice` | non | Conseils écrits, affichés sur le Dashboard les jours de séance : `[{ "t": "Mobilité de cheville avant la séance", "s": ["jambes"] }]`. `t` : 200 caractères au plus ; `s` : identifiants des séances concernées, facultatif (toutes sinon). 20 conseils au plus |
 | `rirWeeks` | non | RIR imposé aux polyarticulaires certaines semaines (ex. `"1": "3"` en semaine 1, même écriture que `rirBig`) |
 
 ## Mésocycles (`mesos`)

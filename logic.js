@@ -93,6 +93,9 @@ function validateProgram(p) {
   if (p.daily !== undefined && !(isObj(p.daily) && isText(p.daily.n) && (p.daily.detail === undefined || typeof p.daily.detail === 'string'))) err.push('Champ "daily" : { "n": "nom", "detail": "précision" } ou supprime le champ.');
   if (p.keyLifts !== undefined && !Array.isArray(p.keyLifts)) err.push('Champ "keyLifts" : liste d\'identifiants d\'exercices.');
   for (const id of Array.isArray(p.keyLifts) ? p.keyLifts : []) if (!exIds.has(id)) err.push(`"keyLifts" : exercice "${id}" introuvable dans les séances.`);
+  const sids = Array.isArray(p.sessions) ? p.sessions.map(x => isObj(x) && x.id) : [];
+  if (p.advice !== undefined && !(Array.isArray(p.advice) && p.advice.length <= 20 && p.advice.every(a => isObj(a) && isText(a.t) && a.t.length <= 200 && (a.s === undefined || (Array.isArray(a.s) && a.s.every(x => sids.includes(x)))))))
+    err.push('Champ "advice" : [{ "t": "conseil", "s": [identifiants de séance] }], "s" facultatif.');
   return err;
 }
 
@@ -350,9 +353,41 @@ function volumeOf(sessions, byId) {
   return v;
 }
 
-// Exercice du catalogue au format d'un programme. Fourchettes par bloc de 6 semaines, sauf fourchette fixe (reps)
-function toProgramEx(e, s, blocks) {
-  const key = isPoly(e) ? 'poly' : 'iso', out = { id: e.id, n: e.n, s, r: e.reps || blocks[0][key], rest: e.rest, inc: e.inc, muscles: e.muscles, joints: e.joints, patterns: e.patterns, note: e.cue };
+// Réponses au questionnaire ({ question: valeur, ant: [valeurs] }) → étiquettes de morphologie. Réponse absente = « Je ne sais pas »
+function morphoTags(answers, M) {
+  const t = new Set();
+  for (const c of M.cards) for (const q of c.q) {
+    const a = answers[q.id], vals = q.multi ? (Array.isArray(a) ? a : []) : [a];
+    for (const [v, , tag] of q.opts) if (tag && vals.includes(v)) t.add(tag);
+  }
+  // Buste court : fémurs longs, sauf si le squat à vide a répondu (il l'emporte)
+  if (t.delete('buste_court') && !answers.squat) t.add('femurs_longs');
+  return [...t];
+}
+
+// Applique les règles de morphologie aux séances types. ex : [id, séries, id de base] ; why : règles appliquées
+function morphoSessions(sessions, tags, M) {
+  const has = c => c[0] === '!' ? !tags.includes(c.slice(1)) : tags.includes(c);
+  const out = sessions.map(x => ({ ...x, ex: x.ex.map(([id, n]) => [id, n, id]) })), by = Object.fromEntries(out.map(x => [x.id, x.ex])), why = [];
+  for (const rule of M.rules) if (rule.if.every(has)) {
+    why.push({ txt: rule.txt, tags: rule.if.filter(c => c[0] !== '!') });
+    for (const [op, sid, ...a] of rule.ops) {
+      const l = by[sid];
+      if (op === 'sub') l.forEach(x => { if (x[0] === a[0]) x[0] = a[1]; });
+      else if (op === 'sets') l.forEach(x => { if (x[0] === a[0]) x[1] = a[1]; });
+      else if (op === 'front') l.sort((x, y) => (x[0] !== a[0]) - (y[0] !== a[0]));
+      else if (op === 'drop') l.splice(0, l.length, ...l.filter(x => x[0] !== a[0]));
+      else if (op === 'insert') l.splice(a[0], 0, [a[1], a[2], a[1]]);
+      else if (op === 'append') l.push([a[0], a[1], a[0]]);
+    }
+  }
+  return { sessions: out, why };
+}
+
+// Exercice du catalogue au format d'un programme. Fourchettes par bloc de 6 semaines, sauf fourchette fixe (reps). Consignes de morphologie ajoutées à la note
+function toProgramEx(e, s, blocks, tags = []) {
+  const cues = [...new Set([e.cue, ...Object.entries(e.conditionalCues || {}).filter(([t]) => tags.includes(t)).map(([, c]) => c)].filter(Boolean))];
+  const key = isPoly(e) ? 'poly' : 'iso', out = { id: e.id, n: e.n, s, r: e.reps || blocks[0][key], rest: e.rest, inc: e.inc, muscles: e.muscles, joints: e.joints, patterns: e.patterns, note: cues.join(' · ') };
   if (e.category === 'lourd') out.big = true;
   if (!isPoly(e)) out.iso = true;
   if (e.category === 'postural') out.cat = 'postural';
@@ -362,18 +397,21 @@ function toProgramEx(e, s, blocks) {
   return JSON.parse(JSON.stringify(out));
 }
 
-// Renvoie { program, low } : low = muscles sous leur base [{ m, v, base }]. program null si aucune séance n'est possible
-function generateProgram({ equipment, refused = [], start }, lib) {
+// Renvoie { program, low, why } : low = muscles sous leur base [{ m, v, base }] ; why = ce que la morphologie change [{ txt, tags }].
+// program null si aucune séance n'est possible. tags : étiquettes de morphologie et d'antécédents (morphoTags)
+function generateProgram({ equipment, refused = [], start, tags = [] }, lib) {
   const byId = Object.fromEntries(lib.CATALOGUE.map(e => [e.id, e]));
-  const allowed = id => byId[id].equipment.some(a => a.every(q => equipment.includes(q))) && !refused.includes(id) && !(byId[id].fromWeek > 1);
-  const built = [];
-  for (const s of lib.UPPER_LOWER.sessions) {
-    const prev = built.find(b => b.pair === s.pair), other = lib.UPPER_LOWER.sessions.find(o => o.pair === s.pair && o.id !== s.id);
+  const banned = id => byId[id].incompatibleWith.some(t => tags.includes(t));
+  const allowed = id => byId[id].equipment.some(a => a.every(q => equipment.includes(q))) && !refused.includes(id) && !(byId[id].fromWeek > 1) && !banned(id);
+  const { sessions: base, why } = morphoSessions(lib.UPPER_LOWER.sessions, tags, lib.MORPHO), built = [];
+  for (const s of base) {
+    const prev = built.find(b => b.pair === s.pair), other = base.find(o => o.pair === s.pair && o.id !== s.id);
     const twin = new Set(prev ? prev.ex.map(x => x.id) : other.ex.map(([id]) => id).filter(allowed)), used = new Set();
-    const ex = s.ex.map(([id, n], i) => {
+    const ex = s.ex.map(([id, n, from], i) => {
       const later = s.ex.slice(i + 1).map(([x]) => x).filter(allowed), got = pickEx(id, byId, allowed, new Set([...used, ...later]), twin);
       used.add(got);
-      return { id: got, from: id, s: n };
+      if (got !== id && banned(id)) why.push({ txt: `${byId[id].n} remplacé par ${got ? byId[got].n : 'rien'}`, tags: byId[id].incompatibleWith.filter(t => tags.includes(t)) });
+      return { id: got, from, s: n };
     });
     built.push({ ...s, ex });
   }
@@ -384,13 +422,15 @@ function generateProgram({ equipment, refused = [], start }, lib) {
     list.reduce((a, x) => x.s < a.s ? x : a).s++;
   }
   const vol = volumeOf(built, byId), low = Object.entries(lib.VOLUME_BASE).map(([m, base]) => ({ m, v: vol[m] || 0, base })).filter(x => x.v < x.base);
-  const sessions = built.map(({ id, dow, name, focus, ex }) => ({ id, dow, name, focus, ex: ex.filter(x => x.id).map(x => toProgramEx(byId[x.id], x.s, lib.BLOCKS)) })).filter(s => s.ex.length);
-  if (!sessions.length) return { program: null, low };
-  const keyLifts = [...new Set(lib.UPPER_LOWER.keyLifts.map(k => built.flatMap(s => s.ex).find(x => x.from === k).id).filter(Boolean))];
+  const sessions = built.map(({ id, dow, name, focus, ex }) => ({ id, dow, name, focus, ex: ex.filter(x => x.id).map(x => toProgramEx(byId[x.id], x.s, lib.BLOCKS, tags)) })).filter(s => s.ex.length);
+  if (!sessions.length) return { program: null, low, why };
+  // Objectifs de charge : l'exercice de base, ou celui qui le remplace ; retiré par la morphologie : plus d'objectif
+  const keyLifts = [...new Set(lib.UPPER_LOWER.keyLifts.map(k => (built.flatMap(s => s.ex).find(x => x.from === k) || {}).id).filter(Boolean))];
+  const ids = sessions.map(x => x.id), advice = lib.MORPHO.advice.filter(a => tags.includes(a.tag)).map(({ t, s: on }) => on ? { t, s: on.filter(x => ids.includes(x)) } : { t }).filter(a => !a.s || a.s.length);
   const mesos = lib.BLOCKS.flatMap((b, i) => [
     { id: 'B' + (i + 1), name: `Bloc ${i + 1} ${b.name}`, from: 6 * i + 1, to: 6 * i + 5, phase: 'Prise de muscle', bigR: [...b.poly], rirBig: b.rirPoly, rirIso: b.rirIso },
     { id: 'A' + (i + 1), name: 'Semaine allégée', from: 6 * i + 6, to: 6 * i + 6, deload: true, phase: 'Récupération' }]);
-  return { program: { format: 'suivi-muscu-programme', version: 1, generated: true, name: lib.UPPER_LOWER.name, start, weeks: 6 * lib.BLOCKS.length, rirLight: '3', keyLifts, mesos, sessions }, low };
+  return { program: { format: 'suivi-muscu-programme', version: 1, generated: true, name: lib.UPPER_LOWER.name, start, weeks: 6 * lib.BLOCKS.length, rirLight: '3', keyLifts, mesos, sessions, ...(advice.length ? { advice } : {}) }, low, why };
 }
 
 // Repos après une série W, selon le pourcentage de la charge de travail (barème fourni par l'utilisateur)
@@ -475,6 +515,14 @@ function cleanWarm(w) {
   return out;
 }
 
+// Réponses au questionnaire de morphologie : mots courts seulement (les valeurs inconnues sont ignorées par morphoTags)
+const isWord = v => typeof v === 'string' && /^[a-z_]{1,20}$/.test(v);
+function cleanMorpho(m) {
+  const out = {};
+  for (const [k, v] of Object.entries(m)) if (isWord(k) && (isWord(v) || (Array.isArray(v) && v.length <= 10 && v.every(isWord)))) out[k] = Array.isArray(v) ? [...new Set(v)] : v;
+  return out;
+}
+
 // Met des données enregistrées (ou une sauvegarde) au format actuel sans perdre de séance. null si ce n'est pas une sauvegarde.
 // v1 : séances rangées par numéro de semaine ("3|lundi"), mélangées après un décalage. v2 : par lundi ("2026-12-07|lundi").
 function migrate(d, defaultProgram, today) {
@@ -485,6 +533,7 @@ function migrate(d, defaultProgram, today) {
   if (isObj(d.profile)) {
     profile = { prenom: String(d.profile.prenom || ''), sexe: d.profile.sexe === 'f' ? 'f' : 'h', taille: Number(d.profile.taille) || height, start: isDate(d.profile.start) ? d.profile.start : null, trackedZones: cleanZones(d.profile.trackedZones) };
     for (const k of ['equipment', 'refused']) if (Array.isArray(d.profile[k])) profile[k] = cleanIds(d.profile[k]);
+    if (isObj(d.profile.morpho)) profile.morpho = cleanMorpho(d.profile.morpho);
   } else if (d.height || Object.keys(d.logs).length) profile = { prenom: '', sexe: 'h', taille: height, start: null, trackedZones: [] };
   // Profil sans programme enregistré : copie figée, pour qu'un futur programme par défaut ne remplace jamais le sien
   if (profile && !d.program) program = JSON.parse(JSON.stringify(defaultProgram));
@@ -528,4 +577,4 @@ function migrate(d, defaultProgram, today) {
   return { v: 2, logs, daily: isObj(d.daily) ? d.daily : {}, fatigue, mesures, shifts, profile, program, oldEx, prev, next };
 }
 
-if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, cycleState, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, generateProgram, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };
+if (typeof module !== 'undefined') module.exports = { MUSCLES, TAGS, exTags, cleanZones, MESURES, setProgram, validateProgram, migrate, exMuscles, oldExFrom, zoneMuscle, periodWeeks, plannedWeekly, addDays, mondayOf, weekIndex, weekOf, cycleState, mesoOf, nextDeload, isLight, rirFor, rangeFor, setsFor, incFor, fatigueAdvice, countSignals, progressionHint, doneSets, pastTimes, effortOf, guard, applyGuard, protectKg, e1rm, generateProgram, morphoTags, morphoSessions, warmRest, warmupFor, warmKg, isRir, navyBodyFat, getProgram: () => P };

@@ -91,6 +91,9 @@ function viewDash() {
     const done = !!(db.daily[t] || {}).oiseau;
     h += `<h2>Priorité quotidienne</h2><div class="card row"><div><div>${esc(P.daily.n)}</div>${P.daily.detail ? `<div class="mut">${esc(P.daily.detail)}</div>` : ''}</div><button class="check ${done ? 'on' : ''}" data-a="oiseau" aria-label="Fait aujourd'hui">${done ? '✓' : ''}</button></div>`;
   }
+  // Conseils écrits du programme, les jours d'une séance concernée
+  const todayS = P.sessions.filter(s => s.dow === new Date().getDay()), tips = (P.advice || []).filter(a => todayS.some(s => !a.s || a.s.includes(s.id)));
+  if (tips.length && !notStarted) h += `<h2>Conseils du jour</h2><div class="card">${tips.map(a => `<div style="padding:4px 0">${esc(a.t)}</div>`).join('')}</div>`;
   h += `<h2>Planning de la semaine</h2>`;
   for (const s of P.sessions) {
     const done = sessionDone(key, s.id);
@@ -406,7 +409,7 @@ function viewProgramCard() {
   const origin = P.generated ? 'créé dans l\'appli' : JSON.stringify(baseProgram()) === JSON.stringify(DEFAULT_PROGRAM) ? 'par défaut' : 'importé';
   let h = `<h2>Programme</h2><div class="card"><div style="font-weight:600">${esc(P.name)}</div><div class="mut">${P.weeks} semaines · ${P.sessions.length} séances par semaine · ${P.mesos.filter(m => !m.deload).length} mésocycles · ${origin}</div>`;
   h += `<div class="row" style="margin-top:10px"><button style="flex:1" data-a="prog-export">Télécharger (modèle)</button><button style="flex:1" data-a="prog-import">Importer</button><input type="file" accept="application/json,.json" id="progFile" hidden></div>`;
-  h += `<button style="width:100%;min-height:44px;margin-top:8px" data-a="gen-open">${db.profile ? 'Créer un programme' : 'Adapter à mon matériel'}</button>`;
+  h += `<button style="width:100%;min-height:44px;margin-top:8px" data-a="gen-open">${db.profile ? 'Créer un programme' : 'Adapter à mon corps et ma salle'}</button>`;
   if (db.profile && db.prev) h += `<button class="ghost" style="width:100%;min-height:44px;margin-top:8px" data-a="prog-prev">Revenir au programme précédent : ${esc(db.prev.program.name)}</button>`;
   if (ui.progOk) h += `<div class="banner info" style="margin:10px 0 0">${esc(ui.progOk)}</div>`;
   if (ui.progErr.length) h += `<div class="err">Programme refusé :<ul style="margin:4px 0;padding-left:18px">${ui.progErr.slice(0, 8).map(e => `<li>${esc(e)}</li>`).join('')}</ul>${ui.progErr.length > 8 ? `et ${ui.progErr.length - 8} autre(s) erreur(s).` : ''}</div>`;
@@ -414,19 +417,22 @@ function viewProgramCard() {
 }
 
 // ---------- Créer un programme ----------
-// ui.gen = { equipment, refused, start, res } ; res = aperçu (null : questions). Cases natives, sans nouveau rendu : la position et le focus restent
+// ui.gen = { equipment, refused, morpho, zones, start, res } ; res = aperçu (null : questions). morpho : réponses au questionnaire (MORPHO de catalogue.js). Cases natives, sans nouveau rendu : la position et le focus restent
 // cycle : nouveau cycle. Dernière semaine : lundi prochain, pour finir la semaine allégée
 function openGen(cycle) {
   const saved = db.profile || ui.genSaved || {};
-  ui.gen = { equipment: saved.equipment || Object.keys(EQUIPMENT), refused: saved.refused || [], start: !db.profile ? ui.setup.start || nextMonday() : cycle && cycleState(today(), db.shifts) === 'last' ? addDays(wk(), 7) : P.generated && !cycle ? P.start : nextMonday(), res: null };
+  ui.gen = { equipment: saved.equipment || Object.keys(EQUIPMENT), refused: saved.refused || [], morpho: { ...saved.morpho }, zones: true, start: !db.profile ? ui.setup.start || nextMonday() : cycle && cycleState(today(), db.shifts) === 'last' ? addDays(wk(), 7) : P.generated && !cycle ? P.start : nextMonday(), res: null };
 }
 
 function viewGen() {
   const g = ui.gen;
   if (g.res) return viewGenPreview(g.res);
   const all = Object.keys(EQUIPMENT), chk = (k, v, label, on) => `<label class="chk"><span>${esc(label)}</span><input type="checkbox" data-g="${k}" value="${v}" ${on ? 'checked' : ''}></label>`;
-  let h = `<div class="gen"><h1 tabindex="-1">${db.profile ? 'Créer un programme' : 'Adapter le programme'}</h1><div class="mut">Upper/Lower : 4 séances par semaine, 24 semaines, prise de muscle.</div>`;
-  h += `<h2>Mon matériel</h2><div class="card" role="group" aria-label="Mon matériel">${chk('all', '', 'Salle complète (tout)', g.equipment.length === all.length)}${all.map(k => chk('eq', k, EQUIPMENT[k], g.equipment.includes(k))).join('')}</div>`;
+  let h = `<div class="gen"><h1 tabindex="-1">${db.profile ? 'Créer un programme' : 'Adapter le programme'}</h1><div class="mut">Upper/Lower : 4 séances par semaine, 24 semaines, prise de muscle, en salle.</div>`;
+  h += `<h2>Mon corps</h2><div class="card"><div class="mut" style="margin-bottom:8px">Réponds à ce que tu sais. « Je ne sais pas » ne change rien au programme.</div>`;
+  MORPHO.cards.forEach((c, ci) => { h += `<details><summary><span>${esc(c.name)}</span><span class="mut" data-gm="${ci}">${answered(c, g.morpho)}</span></summary>${c.q.map(q => viewQuestion(q, g.morpho[q.id])).join('')}${ci === MORPHO.cards.length - 1 ? '<div class="mut" style="padding:8px 0">Données de santé : elles restent sur ce téléphone et dans tes sauvegardes.</div>' : ''}</details>`; });
+  const miss = all.length - g.equipment.length;
+  h += `</div><h2>Ma salle</h2><div class="card"><details><summary><span>Il manque quelque chose dans ma salle</span><span class="mut" data-gq>${miss ? miss + ' manquant' + (miss > 1 ? 's' : '') : ''}</span></summary><div role="group" aria-label="Mon matériel">${chk('all', '', 'Salle complète (tout)', g.equipment.length === all.length)}${all.map(k => chk('eq', k, EQUIPMENT[k], g.equipment.includes(k))).join('')}</div></details></div>`;
   h += `<h2>Exercices refusés</h2><div class="card"><div class="mut" style="margin-bottom:8px">Facultatif. Coche ceux que tu ne veux pas faire.</div>`;
   for (const m of Object.keys(MUSCLES)) {
     const list = CATALOGUE.filter(e => mainMuscle(e) === m), n = list.filter(e => g.refused.includes(e.id)).length;
@@ -437,11 +443,32 @@ function viewGen() {
   return h + `<div class="err" role="alert" id="err-gen">${esc(ui.err.gen || '')}</div><button class="primary" style="width:100%;margin-top:10px" data-a="gen-preview">Voir le programme</button><button class="ghost" style="width:100%;margin-top:8px" data-a="gen-close">Annuler</button></div>`;
 }
 
-function viewGenPreview({ program, low }) {
+// Une question : boutons à choix unique avec « Je ne sais pas », ou cases pour les antécédents
+function viewQuestion(q, v) {
+  if (q.multi) return `<fieldset class="mq"><legend>${esc(q.label)}</legend><div class="mut">${esc(q.help)}</div>${q.opts.map(([k, l]) => `<label class="chk"><span>${esc(l)}</span><input type="checkbox" data-g="mqm" data-q="${q.id}" value="${k}" ${(v || []).includes(k) ? 'checked' : ''}></label>`).join('')}</fieldset>`;
+  return `<fieldset class="mq"><legend>${esc(q.label)}</legend><div class="mut">${esc(q.help)}</div><div class="seg">${[...q.opts, ['', 'Je ne sais pas']].map(([k, l]) => `<label><input type="radio" name="mq-${q.id}" data-g="mq" data-q="${q.id}" value="${k}" ${(v || '') === k ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div></fieldset>`;
+}
+function answered(c, m) { const n = c.q.filter(q => q.multi ? (m[q.id] || []).length : m[q.id]).length; return n ? n + ' réponse' + (n > 1 ? 's' : '') : ''; }
+// Zones à suivre au check-in pour les antécédents cochés, sauf celles déjà suivies (même articulation seule)
+function antZones(tags, have = []) {
+  return tags.filter(t => MORPHO.zones[t] && !have.some(z => z.tags.length === 1 && z.tags[0] === MORPHO.zones[t][1]))
+    .map(t => ({ id: 'z' + Date.now().toString(36) + t.slice(4), label: MORPHO.zones[t][0], tags: [MORPHO.zones[t][1]] }));
+}
+
+function viewGenPreview({ program, low, why, zones }) {
   let h = `<div class="gen"><h1 tabindex="-1">Aperçu</h1><div class="mut" style="margin-bottom:12px">${esc(program.name)} · début le ${esc(frDate(program.start))}. Reps du premier bloc.</div>`;
   if (low.length) h += `<div class="banner mid" role="status">${low.map(x => x.v ? `${esc(MUSCLES[x.m])} : ${fmt(x.v)} séries par semaine au lieu de ${fmt(x.base)}.` : `${esc(MUSCLES[x.m])} : aucun exercice possible avec tes réponses.`).join('<br>')}</div>`;
-  for (const s of program.sessions) h += `<h2>${esc(s.name)}</h2><div class="card">${s.ex.map(e => `<div class="row" style="padding:5px 0"><span>${esc(e.n)}</span><span class="mut" style="white-space:nowrap">${e.s} × ${(e.big ? program.mesos[0].bigR : e.r).join('-')}</span></div>`).join('')}</div>`;
+  h += `<h2>Ce qui change pour toi</h2><div class="card">${why.length ? why.map(w => `<div style="padding:5px 0">${esc(w.txt)}<div class="mut">${w.tags.map(t => esc(MORPHO.labels[t] || t)).join(', ')}</div></div>`).join('') : '<div class="mut">Rien : c\'est le programme de base.</div>'}</div>`;
+  if (program.advice) h += `<h2>Conseils</h2><div class="card">${program.advice.map(a => `<div style="padding:5px 0">${esc(a.t)}</div>`).join('')}</div>`;
+  for (const s of program.sessions) h += `<h2>${esc(s.name)}</h2><div class="card">${s.ex.map(e => `<div style="padding:5px 0"><div class="row"><span>${esc(e.n)}</span><span class="mut" style="white-space:nowrap">${e.s} × ${(e.big ? program.mesos[0].bigR : e.r).join('-')}</span></div>${e.note ? `<div class="mut">${esc(e.note)}</div>` : ''}</div>`).join('')}</div>`;
+  if (zones.length) h += `<div class="card" style="margin-top:12px"><label class="chk" style="border:0"><span>Suivre ${esc(zones.map(z => z.label.toLowerCase()).join(', '))} au check-in après chaque séance</span><input type="checkbox" data-g="zones" ${ui.gen.zones ? 'checked' : ''}></label></div>`;
   return h + `<div class="mut" style="margin:12px 0">Ce programme ne remplace pas un avis médical. En cas de douleur ou de doute, demande à un professionnel de santé.</div><button class="primary" style="width:100%" data-a="gen-accept">Accepter ce programme</button><button style="width:100%;margin-top:8px" data-a="gen-edit">Modifier mes réponses</button><button class="ghost" style="width:100%;margin-top:8px" data-a="gen-close">Annuler</button></div>`;
+}
+
+// Zones des antécédents ajoutées si la case est cochée : { trackedZones } ou rien
+function keepZones() {
+  const { res, zones } = ui.gen;
+  return zones && res.zones.length ? { trackedZones: cleanZones([...((db.profile || {}).trackedZones || []), ...res.zones]) } : {};
 }
 
 // Change d'étape : haut de page et focus sur le titre
@@ -601,21 +628,22 @@ document.addEventListener('click', ev => {
   else if (a === 'gen-close') { ui.gen = null; render(); window.scrollTo(0, 0); }
   else if (a === 'gen-edit') { ui.gen.res = null; showGen(); }
   else if (a === 'gen-preview') {
-    const g = ui.gen, res = g.start ? generateProgram(g, LIBRARY) : null;
+    const g = ui.gen, tags = morphoTags(g.morpho, MORPHO), res = g.start ? generateProgram({ ...g, tags }, LIBRARY) : null;
+    if (res) res.zones = antZones(tags, db.profile ? db.profile.trackedZones : []);
     ui.err.gen = !res ? 'Choisis une date de début.' : !res.program ? 'Aucun exercice possible : coche plus de matériel ou refuse moins d\'exercices.' : '';
     if (ui.err.gen) return showErr('gen');
     g.res = res; showGen();
   }
   else if (a === 'gen-accept' && P.generated && db.profile && cycleState(today(), db.shifts) && ui.gen.start > today()) {
     // Garde la semaine allégée en cours : le nouveau cycle attend sa date
-    const { res, equipment, refused, start } = ui.gen;
+    const { res, equipment, refused, morpho, start } = ui.gen;
     if (!confirm(`Commencer ce nouveau cycle le ${frDate(start)} ? Ton programme actuel continue jusque-là.`)) return;
-    db.next = res.program; Object.assign(db.profile, { equipment, refused }); ui.gen = null; ui.tab = 'dash'; save(); render(); window.scrollTo(0, 0);
+    db.next = res.program; Object.assign(db.profile, { equipment, refused, morpho }, keepZones()); ui.gen = null; ui.tab = 'dash'; save(); render(); window.scrollTo(0, 0);
   }
   else if (a === 'gen-accept' && (!db.profile || confirm(`Remplacer ton programme « ${P.name} » ? Tes séances enregistrées sont conservées, et tu pourras revenir à ce programme.`))) {
-    const { res, equipment, refused } = ui.gen;
+    const { res, equipment, refused, morpho } = ui.gen, zones = keepZones();
     useProgram(res.program); ui.gen = null;
-    if (db.profile) { Object.assign(db.profile, { start: null, equipment, refused }); save(); applyProgram(); } else ui.genSaved = { equipment, refused };
+    if (db.profile) { Object.assign(db.profile, { start: null, equipment, refused, morpho }, zones); save(); applyProgram(); } else ui.genSaved = { equipment, refused, morpho, ...zones };
     ui.progOk = `Programme « ${P.name} » créé · début le ${frDate(P.start)}${db.profile ? `, semaine ${week()}` : ''}.`; ui.progErr = []; render(); window.scrollTo(0, 0);
   }
   else if (a === 'export') downloadJson(db, `muscu-${today()}.json`);
@@ -643,8 +671,13 @@ document.addEventListener('change', ev => {
   if ('gs' in i.dataset) ui.gen.start = i.value;
   if (i.dataset.g) {
     const g = ui.gen, put = (list, v) => i.checked ? [...list, v] : list.filter(x => x !== v), box = k => [...document.querySelectorAll(`[data-g=${k}]`)];
-    if (i.dataset.g === 'all') { g.equipment = i.checked ? Object.keys(EQUIPMENT) : []; box('eq').forEach(b => { b.checked = i.checked; }); }
-    else if (i.dataset.g === 'eq') { g.equipment = put(g.equipment, i.value); box('all')[0].checked = g.equipment.length === Object.keys(EQUIPMENT).length; }
+    const miss = () => { const n = Object.keys(EQUIPMENT).length - g.equipment.length; $('[data-gq]').textContent = n ? n + ' manquant' + (n > 1 ? 's' : '') : ''; };
+    const card = () => { const d = i.closest('details'); d.querySelector('[data-gm]').textContent = answered(MORPHO.cards[+d.querySelector('[data-gm]').dataset.gm], g.morpho); };
+    if (i.dataset.g === 'all') { g.equipment = i.checked ? Object.keys(EQUIPMENT) : []; box('eq').forEach(b => { b.checked = i.checked; }); miss(); }
+    else if (i.dataset.g === 'eq') { g.equipment = put(g.equipment, i.value); box('all')[0].checked = g.equipment.length === Object.keys(EQUIPMENT).length; miss(); }
+    else if (i.dataset.g === 'mq') { if (i.value) g.morpho[i.dataset.q] = i.value; else delete g.morpho[i.dataset.q]; card(); }
+    else if (i.dataset.g === 'mqm') { g.morpho[i.dataset.q] = put(g.morpho[i.dataset.q] || [], i.value); card(); }
+    else if (i.dataset.g === 'zones') g.zones = i.checked;
     else {
       g.refused = put(g.refused, i.value);
       const d = i.closest('details'), n = d.querySelectorAll('input:checked').length;

@@ -506,4 +506,38 @@ const noFentes = gen(['halteres', 'banc'], ['fentes']);
 assert.strictEqual(list(noFentes)['lower-b'], 'sdjthalteres3 fentesbulgares3 mollets2 crunchsol2');
 assert.deepStrictEqual(noFentes.low.find(x => x.m === 'quadriceps'), { m: 'quadriceps', v: 1.5, base: 6 });
 L.setProgram(DEF);
+// Morphologie (règles validées le 28/11/2026) : réponses → étiquettes. Réponse absente = « Je ne sais pas »
+const M = LIB.MORPHO, tags = a => L.morphoTags(a, M).sort();
+assert.deepStrictEqual(tags({}), []);
+assert.deepStrictEqual(tags({ cage: 'non', dorsaux: 'haut', bassin: 'plat', ant: ['genou', 'inconnu'] }), ['ant_genou', 'cage_plate', 'dorsaux_courts', 'retroversion']);
+assert.deepStrictEqual(tags({ cage: 'oui', dorsaux: 'milieu', bassin: 'normal', ant: 'genou' }), [], 'oui, milieu, normal : rien ; ant doit être une liste');
+assert.deepStrictEqual(tags({ buste: 'oui' }), ['femurs_longs'], 'buste court : fémurs longs');
+assert.deepStrictEqual(tags({ buste: 'oui', squat: 'non' }), [], 'le squat à vide l\'emporte sur le buste');
+assert.deepStrictEqual(tags({ buste: 'non', quadri: 'oui' }), ['femurs_longs']);
+const mo = (t, equipment = FULL, refused = []) => L.generateProgram({ equipment, refused, start: '2027-01-04', tags: t }, LIB);
+const total = g => g.program.sessions.reduce((n, s) => n + s.ex.reduce((m, e) => m + e.s, 0), 0);
+// Totaux du tableau validé : base, profils fictifs A à D, toutes les réponses
+assert.deepStrictEqual([[], ['cage_plate', 'bras_longs', 'epaules_enroulees'], ['clavicules_courtes', 'femurs_longs', 'tibias_courts'], ['dorsaux_courts', 'trapezes_dominants', 'biceps_courts'], ['ischios_retard', 'ant_genou', 'ant_lombaire', 'retroversion']].map(t => total(mo(t))), [53, 53, 57, 55, 56]);
+const all = mo(['cage_plate', 'bras_longs', 'clavicules_courtes', 'epaules_enroulees', 'trapezes_dominants', 'dorsaux_courts', 'biceps_courts', 'femurs_longs', 'ischios_retard', 'ant_epaule', 'ant_coude', 'ant_genou', 'ant_lombaire', 'retroversion']);
+assert.deepStrictEqual(list(all), { 'upper-a': 'oiseau2 decline3 pullover2 tractions3 ecartepoulie2 latpoulie3 marteau4', 'lower-a': 'legcurlassis4 legext2 hack3 hipthrust2 mollets2 crunch2', 'upper-b': 'oiseaumachine2 chestpress3 tirage453 tirageneutre2 lathalteres3 triceps3', 'lower-b': 'legcurlallonge3 presse3 molletsassis2 crunch2 banclombaires2' });
+assert.strictEqual(total(all), 62);
+// Objectifs de charge : l'exercice qui remplace ; soulevé retiré : plus d'objectif
+assert.deepStrictEqual(all.program.keyLifts, ['decline', 'tractions', 'hack']);
+assert.deepStrictEqual(mo(['ant_lombaire', 'retroversion']).program.keyLifts, ['dchalteres', 'tractions', 'hack', 'legcurlallonge']);
+// Consignes de morphologie ajoutées à la note, sans doublon ; sans réponse : note du catalogue
+const exOf = (g, id) => g.program.sessions.flatMap(s => s.ex).find(e => e.id === id);
+assert.strictEqual(exOf(mo(['cage_plate', 'bras_longs']), 'decline').note, [cat.decline.cue, cat.decline.conditionalCues.cage_plate, cat.decline.conditionalCues.bras_longs].join(' · '));
+assert.strictEqual(exOf(neutral, 'dchalteres').note, cat.dchalteres.cue);
+// Pourquoi : règle appliquée, exercice interdit par un antécédent
+assert.deepStrictEqual(mo(['cage_plate']).why, [{ txt: M.rules[0].txt, tags: ['cage_plate'] }]);
+assert.deepStrictEqual(mo(['ant_lombaire']).why, [{ txt: 'Soulevé de terre jambes tendues remplacé par Leg curl allongé', tags: ['ant_lombaire'] }]);
+assert.deepStrictEqual(neutral.why, []);
+// Conseils écrits : liés à leurs séances, contrôlés à l'import ; aucun sans réponse
+assert.deepStrictEqual(mo(['tibias_courts', 'cage_plate']).program.advice, [{ t: M.advice[0].t }, { t: M.advice[2].t, s: ['lower-a', 'lower-b'] }]);
+assert.ok(!('advice' in neutral.program));
+assert.deepStrictEqual(L.validateProgram(mo(['tibias_courts']).program), []);
+for (const advice of [[{ t: '' }], [{ t: 'x', s: ['inconnue'] }], 'x', [{ t: 'x'.repeat(201) }]]) assert.strictEqual(L.validateProgram({ ...neutral.program, advice }).length, 1, JSON.stringify(advice));
+// Réponses gardées dans le profil : mots courts seulement
+assert.deepStrictEqual(L.migrate({ v: 2, logs: {}, profile: { ...prof, morpho: { cage: 'non', ant: ['genou', 'genou'], bad: '<b>', X: 'y', n: 5, liste: [1] } }, program: mini }, DEF).profile.morpho, { cage: 'non', ant: ['genou'] });
+assert.ok(!('morpho' in L.migrate({ v: 2, logs: {}, profile: prof, program: mini }, DEF).profile));
 console.log('logic ok');
