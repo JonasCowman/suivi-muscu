@@ -49,13 +49,14 @@ function logFor(key, sid) {
 }
 
 // Alerte des zones suivies sur un exercice, pour la séance en cours
-const guardOf = (e, sid) => guard(db.logs, db.profile.trackedZones || [], e, sid, wk(), Date.now(), plannedSets);
+const guardOf = (e, sid, key = wk()) => guard(db.logs, db.profile.trackedZones || [], e, sid, key, Date.now(), plannedSets);
 
-function hintFor(e, sid) {
-  const key = wk(), all = pastTimes(db.logs, e, sid, key, Date.now());
-  const { past, efforts, guard: alert } = applyGuard(all, all.map(t => effortOf(t.sets, rirFor(progWeek(t.key), e, prevFatigue(t.key)))), guardOf(e, sid));
+// Objectif de l'exercice pour la semaine key (par défaut la semaine en cours ; semaine prochaine dans l'aperçu)
+function hintFor(e, sid, key = wk()) {
+  const all = pastTimes(db.logs, e, sid, key, Date.now());
+  const { past, efforts, guard: alert } = applyGuard(all, all.map(t => effortOf(t.sets, rirFor(progWeek(t.key), e, prevFatigue(t.key)))), guardOf(e, sid, key));
   const last = past[past.length - 1];
-  return progressionHint(last && last.sets, { range: rangeFor(week(), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key), past: past.map(t => t.sets), efforts, guard: alert, n: plannedSets(key, e) });
+  return progressionHint(last && last.sets, { range: rangeFor(progWeek(key), e), need: last ? setsFor(progWeek(last.key), e, prevFatigue(last.key)) : e.s, inc: incFor(e), light: light(key), past: past.map(t => t.sets), efforts, guard: alert, n: plannedSets(key, e) });
 }
 
 function bestByWeek(exId) {
@@ -84,7 +85,12 @@ function viewNextWeek() {
   else if (f >= 3) h += `<div class="banner high">Semaine allégée anticipée (bilan fatigue : ${f} signaux) : moitié des séries, mêmes charges.</div>`;
   else if (f === 2) h += `<div class="banner mid">Bilan fatigue : 2 signaux. Séries bonus retirées, RIR 2 au moins.</div>`;
   else if (!db.fatigue[wk()] && key > mondayOf(P.start)) h += `<div class="banner info">Bilan de fatigue pas encore fait : la semaine peut encore devenir allégée.</div>`;
-  for (const s of P.sessions) h += `<h2>${esc(s.name)}</h2><div class="card">${s.ex.map(e => { const rr = rangeFor(w, e); return `<div class="row" style="padding:5px 0"><span>${esc(e.n)}</span><span class="mut" style="white-space:nowrap">${setsFor(w, e, f)} × ${rr[0]}-${rr[1]} · RIR ${esc(rirFor(w, e, f))}</span></div>`; }).join('')}</div>`;
+  // Charges : connues seulement quand la même séance de cette semaine est faite (choix de l'utilisateur)
+  const started = wk() >= mondayOf(P.start);
+  for (const s of P.sessions) {
+    const known = !started || sessionDone(wk(), s.id);
+    h += `<h2>${esc(s.name)}</h2><div class="card">${known ? '' : '<div class="mut" style="padding-bottom:4px">Charges connues après ta séance de cette semaine.</div>'}${s.ex.map(e => { const rr = rangeFor(w, e); return `<div style="padding:5px 0"><div class="row"><span>${esc(e.n)}</span><span class="mut" style="white-space:nowrap">${setsFor(w, e, f)} × ${rr[0]}-${rr[1]} · RIR ${esc(rirFor(w, e, f))}</span></div>${known ? `<div class="mut">${esc(hintFor(e, s.id, from).text)}</div>` : ''}</div>`; }).join('')}</div>`;
+  }
   return h + back;
 }
 
